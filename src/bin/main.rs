@@ -1,4 +1,4 @@
-use futhark_generate::*;
+use futhark_bindgen::*;
 
 fn main() -> Result<(), Error> {
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -10,7 +10,10 @@ fn main() -> Result<(), Error> {
     let compiler = Compiler::new(Backend::C, &args[0]);
     let lib = compiler.compile()?;
 
-    println!("{:?}", lib.manifest);
-    lib.manifest.print_c_functions();
+    let output = lib.c_file.with_extension("rs");
+    let mut config = Config::new(output)?;
+    let mut gen = config.detect().expect("Invalid output language");
+    gen.generate(&lib, &mut config)?;
+
     Ok(())
 }

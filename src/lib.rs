@@ -1,11 +1,11 @@
 pub(crate) use std::collections::BTreeMap;
 
-mod codegen;
 mod error;
+mod generate;
 pub mod manifest;
 
-pub use codegen::{Codegen, Config, Python};
 pub use error::Error;
+pub use generate::{Config, Generate, Python, Rust};
 pub use manifest::Manifest;
 
 #[derive(Debug, serde::Deserialize, Clone, Copy)]
@@ -30,7 +30,7 @@ pub enum Backend {
 }
 
 impl Backend {
-    pub fn name(&self) -> &'static str {
+    pub fn to_str(&self) -> &'static str {
         match self {
             Backend::C => "c",
             Backend::CUDA => "cuda",
@@ -83,7 +83,7 @@ impl Compiler {
 
     pub fn compile(&self) -> Result<Library, Error> {
         let ok = std::process::Command::new(&self.exe)
-            .arg(self.backend.name())
+            .arg(self.backend.to_str())
             .arg(&self.src)
             .status()?
             .success();
