@@ -123,7 +123,7 @@ impl Rust {
             .arg("ctx", "&'a Context")
             .arg("dims", &format!("[i64; {}]", a.rank))
             .ret("Result<Self, Error>")
-            .line("let data = vec![0 as {}; dims.iter().fold(1, |a, b| a * b)]")
+            .line("let data = vec![0 as {}; dims.iter().fold(1, |a, b| a * b)];")
             .line("let ptr = unsafe {")
             .line(&format!(
                 "    {}(ctx.context, data.as_ptr(), {})",

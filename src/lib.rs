@@ -47,6 +47,7 @@ pub struct Compiler {
     exe: String,
     backend: Backend,
     src: std::path::PathBuf,
+    extra_args: Vec<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -81,11 +82,29 @@ impl Library {
     }
 }
 
+#[cfg(feature = "build")]
+pub fn build(
+    backend: Backend,
+    src: impl AsRef<std::path::Path>,
+    dest: impl AsRef<std::path::Path>,
+) {
+    let lib = Compiler::new(backend, src)
+        .compile()
+        .expect("Compilation failed")
+        .expect("Unable to find manifest file");
+    let mut config = Config::new(dest).expect("Unable to configure codegen");
+    let mut gen = config.detect().expect("Invalid output language");
+    gen.generate(&lib, &mut config)
+        .expect("Code generation failed");
+    lib.link();
+}
+
 impl Compiler {
     pub fn new(backend: Backend, src: impl AsRef<std::path::Path>) -> Compiler {
         Compiler {
             exe: String::from("futhark"),
             src: src.as_ref().to_path_buf(),
+            extra_args: Vec::new(),
             backend,
         }
     }
@@ -94,11 +113,16 @@ impl Compiler {
         self.exe = name.as_ref().into();
     }
 
+    pub fn set_extra_args(&mut self, args: Vec<String>) {
+        self.extra_args = args;
+    }
+
     pub fn compile(&self) -> Result<Option<Library>, Error> {
         let ok = std::process::Command::new(&self.exe)
             .arg(self.backend.to_str())
-            .arg(&self.src)
+            .args(&self.extra_args)
             .arg("--lib")
+            .arg(&self.src)
             .status()?
             .success();
 
