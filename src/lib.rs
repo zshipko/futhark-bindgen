@@ -59,12 +59,26 @@ pub struct Library {
 }
 
 impl Library {
+    pub fn required_c_libs(&self) -> &'static [&'static str] {
+        match self.manifest.backend {
+            Backend::CUDA => &["cuda", "cudart", "nvrtc", "m"],
+            Backend::OpenCL => &["OpenCL", "m"],
+            _ => &[],
+        }
+    }
+
     #[cfg(feature = "build")]
     pub fn link(&self) {
         cc::Build::new()
             .file(&self.c_file)
             .compile("futhark_generate");
         println!("cargo:rustc-link-lib=futhark_generate");
+
+        let libs = self.required_c_libs();
+
+        for lib in libs {
+            println!("cargo:rustc-link-lib={}", lib);
+        }
     }
 }
 
