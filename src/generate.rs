@@ -38,6 +38,7 @@ impl Generate for Python {
 
 pub struct Rust {
     typemap: BTreeMap<String, String>,
+    scope: codegen::Scope,
 }
 
 const RUST_TYPE_MAP: &[(&'static str, &'static str)] = &[];
@@ -48,7 +49,10 @@ impl Default for Rust {
             .iter()
             .map(|(a, b)| (a.to_string(), b.to_string()))
             .collect();
-        Rust { typemap }
+        Rust {
+            typemap,
+            scope: codegen::Scope::new(),
+        }
     }
 }
 
@@ -77,88 +81,207 @@ impl ExternFn {
         self
     }
 
-    pub fn gen(self, scope: &mut codegen::Scope) {
+    pub fn gen(self, r: &mut Rust) {
         let mut s = format!("unsafe extern \"C\" fn {}(", self.name);
+        let mut args = Vec::new();
         for arg in &self.args {
-            s += &format!("{}: {}, ", arg.0, arg.1);
+            args.push(format!("{}: {}", arg.0, arg.1));
         }
+        s += &args.join(", ");
         s += ")";
         if !self.ret.is_empty() {
             s += "-> ";
             s += &self.ret;
         }
         s += ";\n";
-        scope.raw(&s);
+        r.scope.raw(&s);
     }
 }
 
+struct ArrayInfo {
+    original_name: String,
+    ptr: String,
+    rust_name: String,
+    elem: String,
+    elem_ptr: String,
+}
+
 impl Rust {
-    fn generate_array_type(
-        scope: &mut codegen::Scope,
-        a: &manifest::ArrayType,
-    ) -> Result<String, Error> {
+    fn generate_array_type(&mut self, a: &manifest::ArrayType) -> Result<ArrayInfo, Error> {
         let original_name = format!("futhark_{}_{}d", a.elemtype.to_str(), a.rank);
-        let name = format!("Array_{}_{}d", a.elemtype.to_str(), a.rank);
-        scope.new_struct(&original_name).repr("C");
+        let rust_name = format!("Array_{}_{}d", a.elemtype.to_str(), a.rank);
+        let ptr = format!("*mut {original_name}");
+        let info = ArrayInfo {
+            original_name,
+            ptr,
+            rust_name,
+            elem: a.elemtype.to_str().to_string(),
+            elem_ptr: format!("*mut {}", a.elemtype.to_str()),
+        };
 
-        scope
-            .new_struct(&name)
-            .field("inner", format!("*mut {original_name}"));
+        self.scope.new_struct(&info.original_name).repr("C");
 
-        let mut new = ExternFn::new(format!("futhark_new_{}_{}d", a.elemtype.to_str(), a.rank))
+        self.scope
+            .new_struct(&info.rust_name)
+            .field("inner", &info.ptr)
+            .vis("pub");
+
+        let new_fn = format!("futhark_new_{}_{}d", a.elemtype.to_str(), a.rank);
+        let array_impl = self.scope.new_impl(&info.rust_name);
+        let array_new = array_impl.new_fn("new").arg("ctx", "&Context").vis("pub");
+        let mut dim_params = Vec::new();
+        for i in 0..a.rank {
+            let dim = format!("dim{i}");
+            array_new.arg(&dim, "i64");
+            dim_params.push(dim);
+        }
+        array_new.ret("Result<Self, Error>");
+        array_new.line("let ptr = unsafe {");
+        array_new.line(&format!(
+            "{}(ctx.inner, std::ptr::null(), {})",
+            &new_fn,
+            dim_params.join(", ")
+        ));
+        array_new.line("};");
+        array_new.line("if ptr.is_null() { return Err(Error::NullPtr); }");
+        array_new.line("Ok(Self { inner: ptr })");
+
+        // new
+
+        let mut new = ExternFn::new(new_fn)
             .arg("_", "*mut futhark_context")
-            .arg("_", format!("*mut {}", a.elemtype.to_str()));
+            .arg("_", &info.elem_ptr);
 
         for i in 0..a.rank {
             new = new.arg(&format!("dim{i}"), "i64");
         }
 
-        new.ret(&format!("*mut {original_name}")).gen(scope);
+        new.ret(&info.ptr).gen(self);
+
+        let mut new_raw = ExternFn::new(format!(
+            "futhark_new_raw_{}_{}d",
+            a.elemtype.to_str(),
+            a.rank
+        ))
+        .arg("_", "*mut futhark_context")
+        .arg("_", "*mut u8")
+        .arg("offset", "i64");
+
+        for i in 0..a.rank {
+            new_raw = new_raw.arg(&format!("dim{i}"), "i64");
+        }
+
+        new_raw.ret(&info.ptr).gen(self);
 
         // free
         let _free = ExternFn::new(format!("futhark_free_{}_{}d", a.elemtype.to_str(), a.rank))
             .arg("_", "*mut futhark_context")
-            .arg("_", &format!("*mut {name}"))
+            .arg("_", &info.ptr)
             .ret("std::os::raw::c_int")
-            .gen(scope);
+            .gen(self);
 
-        Ok(name)
+        // values
+        let _values = ExternFn::new(format!(
+            "futhark_values_{}_{}d",
+            a.elemtype.to_str(),
+            a.rank
+        ))
+        .arg("_", "*mut futhark_context")
+        .arg("_", &info.ptr)
+        .arg("_", &info.elem_ptr)
+        .ret("std::os::raw::c_int")
+        .gen(self);
+
+        let _values_raw = ExternFn::new(format!(
+            "futhark_values_raw_{}_{}d",
+            a.elemtype.to_str(),
+            a.rank
+        ))
+        .arg("_", "*mut futhark_context")
+        .arg("_", &info.ptr)
+        .ret("*mut u8")
+        .gen(self);
+        Ok(info)
+    }
+
+    fn generate_entry_function(&mut self, entry: &manifest::Entry) -> Result<(), Error> {
+        let mut c = ExternFn::new(&entry.cfun).arg("_", "*mut futhark_context");
+
+        for (i, arg) in entry.outputs.iter().enumerate() {
+            let t = self.typemap.get(&arg.r#type);
+            let t = match t {
+                Some(t) => t,
+                None => &arg.r#type,
+            };
+            c = c.arg(format!("out{i}"), t)
+        }
+
+        for (i, arg) in entry.inputs.iter().enumerate() {
+            let t = self.typemap.get(&arg.r#type);
+            let t = match t {
+                Some(t) => t,
+                None => &arg.r#type,
+            };
+            c = c.arg(format!("input{i}"), t.replace("*mut", "*const"));
+        }
+
+        c.ret("std::os::raw::c_int").gen(self);
+        Ok(())
     }
 }
 
 impl Generate for Rust {
     fn generate(&mut self, library: &Library, config: &mut Config) -> Result<(), Error> {
-        let mut scope = codegen::Scope::new();
-
-        scope.new_struct("futhark_context_config").repr("C");
+        self.scope.new_struct("futhark_context_config").repr("C");
 
         ExternFn::new("futhark_context_config_new")
             .ret("*mut futhark_context_config")
-            .gen(&mut scope);
+            .gen(self);
         ExternFn::new("futhark_context_config_free")
             .arg("_", "*mut futhark_context_config")
-            .gen(&mut scope);
+            .gen(self);
 
-        scope.new_struct("futhark_context").repr("C");
+        self.scope.new_struct("futhark_context").repr("C");
 
         ExternFn::new("futhark_context_new")
             .arg("config", "*mut futhark_context_config")
             .ret("*mut futhark_context")
-            .gen(&mut scope);
+            .gen(self);
         ExternFn::new("futhark_context_free")
             .arg("_", "*mut futhark_context")
-            .gen(&mut scope);
+            .gen(self);
 
-        for (_name, ty) in &library.manifest.types {
+        ExternFn::new("futhark_context_sync")
+            .arg("_", "*mut futhark_context")
+            .ret("std::os::raw::c_int")
+            .gen(self);
+
+        let error = self.scope.new_enum("Error").vis("pub").derive("Debug");
+        error.new_variant("Code").tuple("std::os::raw::c_int");
+        error.new_variant("NullPtr");
+
+        self.scope
+            .new_struct("Context")
+            .field("inner", "*mut futhark_context")
+            .vis("pub");
+
+        let ctx = self.scope.new_impl("Context");
+
+        for (name, ty) in &library.manifest.types {
             match ty {
                 manifest::Type::Array(a) => {
-                    Rust::generate_array_type(&mut scope, a)?;
+                    let info = self.generate_array_type(a)?;
+                    self.typemap.insert(name.clone(), info.ptr);
                 }
                 _ => (), // TODO
             }
         }
 
-        write!(config.output_file, "{}", scope.to_string())?;
+        for (_name, entry) in &library.manifest.entry_points {
+            self.generate_entry_function(entry)?;
+        }
+
+        write!(config.output_file, "{}", self.scope.to_string())?;
         Ok(())
     }
 }
