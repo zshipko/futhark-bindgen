@@ -67,11 +67,20 @@ fn main() -> Result<(), Error> {
     }
     let args = Args::parse(args);
 
-    let mut compiler = Compiler::new(args.backend, args.input);
+    let mut compiler = Compiler::new(args.backend, &args.input);
     if let Some(exe) = args.compiler {
         compiler.set_executable_name(exe);
     }
-    let lib = compiler.compile()?;
+    let lib = match compiler.compile()? {
+        Some(l) => l,
+        None => {
+            let py_file = args.input.with_extension("py");
+            if args.output != py_file {
+                std::fs::copy(py_file, args.output)?;
+            }
+            return Ok(());
+        }
+    };
 
     let mut config = Config::new(args.output)?;
     let mut gen = config.detect().expect("Invalid output language");

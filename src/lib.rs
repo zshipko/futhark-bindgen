@@ -5,7 +5,7 @@ mod generate;
 pub mod manifest;
 
 pub use error::Error;
-pub use generate::{Config, Generate, Python, Rust};
+pub use generate::{Config, Generate, OCaml, Rust};
 pub use manifest::Manifest;
 
 #[derive(Debug, serde::Deserialize, Clone, Copy)]
@@ -54,7 +54,6 @@ pub struct Library {
     pub manifest: Manifest,
     pub c_file: std::path::PathBuf,
     pub h_file: std::path::PathBuf,
-    pub py_file: std::path::PathBuf,
     pub src: std::path::PathBuf,
 }
 
@@ -95,10 +94,11 @@ impl Compiler {
         self.exe = name.as_ref().into();
     }
 
-    pub fn compile(&self) -> Result<Library, Error> {
+    pub fn compile(&self) -> Result<Option<Library>, Error> {
         let ok = std::process::Command::new(&self.exe)
             .arg(self.backend.to_str())
             .arg(&self.src)
+            .arg("--lib")
             .status()?
             .success();
 
@@ -106,16 +106,19 @@ impl Compiler {
             return Err(Error::CompilationFailed);
         }
 
+        match &self.backend {
+            Backend::Python | Backend::PyOpenCL => return Ok(None),
+            _ => (),
+        }
+
         let manifest = Manifest::parse_file(self.src.with_extension("json"))?;
         let c_file = self.src.with_extension("c");
         let h_file = self.src.with_extension("h");
-        let py_file = self.src.with_extension("py");
-        Ok(Library {
+        Ok(Some(Library {
             manifest,
             c_file,
             h_file,
-            py_file,
             src: self.src.clone(),
-        })
+        }))
     }
 }

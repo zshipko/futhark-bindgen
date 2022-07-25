@@ -1,9 +1,9 @@
 use crate::*;
 
-mod python;
+mod ocaml;
 mod rust;
 
-pub use python::Python;
+pub use ocaml::OCaml;
 pub use rust::Rust;
 
 pub struct Config {
@@ -28,8 +28,8 @@ fn rust() -> Box<impl Generate> {
     Box::new(Rust::default())
 }
 
-fn python() -> Box<impl Generate> {
-    Box::new(Python)
+fn ocaml() -> Box<impl Generate> {
+    Box::new(OCaml::default())
 }
 
 impl Config {
@@ -40,7 +40,7 @@ impl Config {
             .map(|x| x.to_str().expect("Invalid extension"))
         {
             Some("rs") => Some(rust()),
-            Some("py") => Some(python()),
+            Some("ml") => Some(ocaml()),
             _ => None,
         }
     }

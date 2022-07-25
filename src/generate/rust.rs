@@ -123,9 +123,10 @@ impl Rust {
             .arg("ctx", "&'a Context")
             .arg("dims", &format!("[i64; {}]", a.rank))
             .ret("Result<Self, Error>")
+            .line("let data = vec![0 as {}; dims.iter().fold(1, |a, b| a * b)]")
             .line("let ptr = unsafe {")
             .line(&format!(
-                "    {}(ctx.context, std::ptr::null(), {})",
+                "    {}(ctx.context, data.as_ptr(), {})",
                 &new_fn,
                 dim_params.join(", ")
             ))
@@ -276,7 +277,7 @@ impl Rust {
                 None => t,
             };
 
-            if t.contains("Array") {
+            if t.contains("Array_") {
                 func.arg(&name, &format!("&mut {t}"));
                 call_args.push(format!("{name}.ptr as *mut _"))
             } else {
@@ -300,7 +301,7 @@ impl Rust {
                 None => t,
             };
 
-            if t.contains("Array") {
+            if t.contains("Array_") {
                 func.arg(&name, &format!("&{t}"));
                 call_args.push(format!("{name}.ptr as *mut _"));
             } else {
