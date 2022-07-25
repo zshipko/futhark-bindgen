@@ -102,16 +102,31 @@ pub struct OpaqueOps {
 }
 
 #[derive(Clone, Debug, serde::Deserialize)]
-pub struct OpaqueType {
-    pub ctypes: String,
-    pub ops: OpaqueOps,
-    // TODO: record field
+pub struct Field {
+    pub name: String,
+    pub project: String,
+    pub r#type: String,
 }
 
 #[derive(Clone, Debug, serde::Deserialize)]
-#[serde(untagged)]
+pub struct Record {
+    pub new: String,
+    pub fields: Vec<Field>,
+}
+
+#[derive(Clone, Debug, serde::Deserialize)]
+pub struct OpaqueType {
+    pub ctype: String,
+    pub ops: OpaqueOps,
+    pub record: Record,
+}
+
+#[derive(Clone, Debug, serde::Deserialize)]
+#[serde(tag = "kind")]
 pub enum Type {
+    #[serde(rename = "array")]
     Array(ArrayType),
+    #[serde(rename = "opaque")]
     Opaque(OpaqueType),
 }
 
