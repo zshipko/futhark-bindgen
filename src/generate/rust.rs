@@ -1,40 +1,5 @@
 use crate::*;
-
 use std::io::Write;
-
-pub struct Config {
-    pub output_path: std::path::PathBuf,
-    pub output_file: std::fs::File,
-}
-
-impl Config {
-    pub fn new(output: impl AsRef<std::path::Path>) -> Result<Config, Error> {
-        Ok(Config {
-            output_path: output.as_ref().to_path_buf(),
-            output_file: std::fs::File::create(output)?,
-        })
-    }
-}
-
-pub trait Generate {
-    fn generate(&mut self, library: &Library, config: &mut Config) -> Result<(), Error>;
-}
-
-pub struct Python;
-
-impl Generate for Python {
-    fn generate(&mut self, library: &Library, config: &mut Config) -> Result<(), Error> {
-        match &library.manifest.backend {
-            Backend::Python | Backend::PyOpenCL => {
-                if &config.output_path != &library.py_file {
-                    std::fs::copy(&library.py_file, &config.output_path)?;
-                }
-                Ok(())
-            }
-            _ => panic!("Python codegen must use a Python backend"),
-        }
-    }
-}
 
 pub struct Rust {
     typemap: BTreeMap<String, String>,
@@ -82,7 +47,7 @@ impl ExternFn {
     }
 
     pub fn gen(self, r: &mut Rust) {
-        let mut s = format!("unsafe extern \"C\" fn {}(", self.name);
+        let mut s = format!("extern \"C\" {} fn {}(", '{', self.name);
         let mut args = Vec::new();
         for arg in &self.args {
             args.push(format!("{}: {}", arg.0, arg.1));
@@ -93,7 +58,8 @@ impl ExternFn {
             s += "-> ";
             s += &self.ret;
         }
-        s += ";\n";
+        s += ";\n}\n";
+        r.scope.raw("#[allow(unused)]");
         r.scope.raw(&s);
     }
 }
@@ -102,6 +68,7 @@ struct ArrayInfo {
     original_name: String,
     ptr: String,
     rust_name: String,
+    #[allow(unused)]
     elem: String,
     elem_ptr: String,
 }
@@ -109,7 +76,11 @@ struct ArrayInfo {
 impl Rust {
     fn generate_array_type(&mut self, a: &manifest::ArrayType) -> Result<ArrayInfo, Error> {
         let original_name = format!("futhark_{}_{}d", a.elemtype.to_str(), a.rank);
-        let rust_name = format!("Array_{}_{}d", a.elemtype.to_str(), a.rank);
+        let rust_name = format!(
+            "Array{}D{}",
+            a.elemtype.to_str().to_ascii_uppercase(),
+            a.rank
+        );
         let ptr = format!("*mut {original_name}");
         let info = ArrayInfo {
             original_name,
@@ -119,15 +90,20 @@ impl Rust {
             elem_ptr: format!("*mut {}", a.elemtype.to_str()),
         };
 
-        self.scope.new_struct(&info.original_name).repr("C");
+        self.scope
+            .new_struct(&info.original_name)
+            .repr("C")
+            .field("_private", "[u8; 0]");
 
         self.scope
             .new_struct(&info.rust_name)
             .field("ptr", &info.ptr)
             .field("pub shape", &format!("[i64; {}]", a.rank))
+            .field("ctx", "*mut futhark_context")
             .field("_t", "std::marker::PhantomData<&'a ()>")
+            .generic("'a")
             .vis("pub")
-            .generic("'a");
+            .doc(&format!("A wrapper around {}", info.original_name));
 
         let new_fn = format!("futhark_new_{}_{}d", a.elemtype.to_str(), a.rank);
         let array_impl = self
@@ -143,6 +119,7 @@ impl Rust {
         let _array_new = array_impl
             .new_fn("new")
             .vis("pub")
+            .doc("Create a new, empty array")
             .arg("ctx", "&'a Context")
             .arg("dims", &format!("[i64; {}]", a.rank))
             .ret("Result<Self, Error>")
@@ -154,16 +131,17 @@ impl Rust {
             ))
             .line("};")
             .line("if ptr.is_null() { return Err(Error::NullPtr); }")
-            .line("Ok(Self { ptr, shape: dims, _t: std::marker::PhantomData })");
+            .line("Ok(Self { ptr: ptr as *mut _, shape: dims, ctx: ctx.context, _t: std::marker::PhantomData })");
 
         let _array_from_slice = array_impl
             .new_fn("from_slice")
             .vis("pub")
+            .doc("Create a new array from an existing slice")
             .arg("ctx", "&'a Context")
             .arg("dims", &format!("[i64; {}]", a.rank))
             .arg("data", &format!("&[{}]", a.elemtype.to_str()))
             .ret("Result<Self, Error>")
-            .line("if data.len() != dims.iter().fold(1, |a, b| a * b) { return Err(Error::InvalidShape); }")
+            .line("if data.len() as i64 != dims.iter().fold(1, |a, b| a * b) { return Err(Error::InvalidShape); }")
             .line("let ptr = unsafe {")
             .line(&format!(
                 "    {}(ctx.context, data.as_ptr(), {})",
@@ -172,17 +150,18 @@ impl Rust {
             ))
             .line("};")
             .line("if ptr.is_null() { return Err(Error::NullPtr); }")
-            .line("Ok(Self { ptr, _t: std::marker::PhantomData })");
+            .line("Ok(Self { ptr: ptr as *mut _, shape: dims, ctx: ctx.context, _t: std::marker::PhantomData })");
 
         let _array_values = array_impl
             .new_fn("values")
             .vis("pub")
-            .arg("ctx", "&'a Context")
+            .doc("Load array data into a mutable slice")
+            .arg_ref_self()
             .arg("data", &format!("&mut [{}]", a.elemtype.to_str()))
             .ret("Result<(), Error>")
-            .line("if data.len() != self.shape.fold(1, |a, b| a * b) { return Err(Error::InvalidShape); }")
+            .line("if data.len() as i64 != self.shape.iter().fold(1, |a, b| a * b) { return Err(Error::InvalidShape); }")
             .line("let rc = unsafe {")
-            .line(&format!("    futhark_values_{}_{}d(ctx.context, self.ptr, data.as_mut_ptr())", a.elemtype.to_str(), a.rank))
+            .line(&format!("    futhark_values_{}_{}d(self.ctx, self.ptr as *mut _, data.as_mut_ptr())", a.elemtype.to_str(), a.rank))
             .line("};")
             .line("if rc != 0 { return Err(Error::Code(rc)) }")
             .line("Ok(())");
@@ -197,7 +176,7 @@ impl Rust {
             .arg_mut_self()
             .line("unsafe {")
             .line(&format!(
-                "    futhark_free_{}_{}d(self.ptr);",
+                "    futhark_free_{}_{}d(self.ctx, self.ptr as *mut _);",
                 a.elemtype.to_str(),
                 a.rank
             ))
@@ -261,8 +240,25 @@ impl Rust {
         Ok(info)
     }
 
-    fn generate_entry_function(&mut self, entry: &manifest::Entry) -> Result<(), Error> {
-        let mut c = ExternFn::new(&entry.cfun).arg("_", "*mut futhark_context");
+    fn generate_entry_function(
+        &mut self,
+        name: &str,
+        entry: &manifest::Entry,
+    ) -> Result<(), Error> {
+        let mut c = ExternFn::new(&entry.cfun)
+            .arg("_", "*mut futhark_context")
+            .ret("std::os::raw::c_int");
+
+        let func = self
+            .scope
+            .new_impl("Context")
+            .new_fn(name)
+            .doc(&format!("Entry point: {name}"))
+            .vis("pub")
+            .ret("Result<(), Error>")
+            .arg_ref_self();
+
+        let mut call_args = Vec::new();
 
         for (i, arg) in entry.outputs.iter().enumerate() {
             let t = self.typemap.get(&arg.r#type);
@@ -270,7 +266,23 @@ impl Rust {
                 Some(t) => t,
                 None => &arg.r#type,
             };
-            c = c.arg(format!("out{i}"), t)
+
+            let name = format!("out{i}");
+            c = c.arg(&name, t);
+
+            let x = self.typemap.get(t);
+            let t = match x {
+                Some(t) => t,
+                None => t,
+            };
+
+            if t.contains("Array") {
+                func.arg(&name, &format!("&mut {t}"));
+                call_args.push(format!("{name}.ptr as *mut _"))
+            } else {
+                func.arg(&name, t);
+                call_args.push(name);
+            }
         }
 
         for (i, arg) in entry.inputs.iter().enumerate() {
@@ -279,17 +291,45 @@ impl Rust {
                 Some(t) => t,
                 None => &arg.r#type,
             };
-            c = c.arg(format!("input{i}"), t.replace("*mut", "*const"));
+            let name = format!("input{i}");
+            c = c.arg(&name, t.replace("*mut", "*const"));
+
+            let x = self.typemap.get(t);
+            let t = match x {
+                Some(t) => t,
+                None => t,
+            };
+
+            if t.contains("Array") {
+                func.arg(&name, &format!("&{t}"));
+                call_args.push(format!("{name}.ptr as *mut _"));
+            } else {
+                func.arg(&name, t);
+                call_args.push(name);
+            }
         }
 
-        c.ret("std::os::raw::c_int").gen(self);
+        func.line("let rc = unsafe {")
+            .line(&format!(
+                "{}(self.context, {})",
+                entry.cfun,
+                call_args.join(", ")
+            ))
+            .line("};")
+            .line("if rc != 0 { return Err(Error::Code(rc)) }")
+            .line("Ok(())");
+
+        c.gen(self);
         Ok(())
     }
 }
 
 impl Generate for Rust {
     fn generate(&mut self, library: &Library, config: &mut Config) -> Result<(), Error> {
-        self.scope.new_struct("futhark_context_config").repr("C");
+        self.scope
+            .new_struct("futhark_context_config")
+            .repr("C")
+            .field("_private", "[u8; 0]");
 
         ExternFn::new("futhark_context_config_new")
             .ret("*mut futhark_context_config")
@@ -298,7 +338,10 @@ impl Generate for Rust {
             .arg("_", "*mut futhark_context_config")
             .gen(self);
 
-        self.scope.new_struct("futhark_context").repr("C");
+        self.scope
+            .new_struct("futhark_context")
+            .repr("C")
+            .field("_private", "[u8; 0]");
 
         ExternFn::new("futhark_context_new")
             .arg("config", "*mut futhark_context_config")
@@ -320,6 +363,7 @@ impl Generate for Rust {
 
         self.scope
             .new_struct("Context")
+            .doc("Wrapper around futhark_context")
             .field("config", "*mut futhark_context_config")
             .field("context", "*mut futhark_context")
             .vis("pub");
@@ -328,6 +372,7 @@ impl Generate for Rust {
         let _ctx_new = ctx
             .new_fn("new")
             .vis("pub")
+            .doc("Create a new context")
             .ret("Result<Self, Error>")
             .line("let config = unsafe { futhark_context_config_new () };")
             .line("if config.is_null() { return Err(Error::NullPtr) }")
@@ -337,8 +382,9 @@ impl Generate for Rust {
 
         let _ctx_sync = ctx
             .new_fn("sync")
+            .doc("Sync context")
             .vis("pub")
-            .arg_self()
+            .arg_ref_self()
             .ret("Result<(), Error>")
             .line("let rc = unsafe { futhark_context_sync(self.context) };")
             .line("if rc != 0 { return Err(Error::Code(rc)) }")
@@ -359,14 +405,15 @@ impl Generate for Rust {
             match ty {
                 manifest::Type::Array(a) => {
                     let info = self.generate_array_type(a)?;
-                    self.typemap.insert(name.clone(), info.ptr);
+                    self.typemap.insert(name.clone(), info.ptr.clone());
+                    self.typemap.insert(info.ptr, info.rust_name);
                 }
                 _ => (), // TODO
             }
         }
 
-        for (_name, entry) in &library.manifest.entry_points {
-            self.generate_entry_function(entry)?;
+        for (name, entry) in &library.manifest.entry_points {
+            self.generate_entry_function(&name, entry)?;
         }
 
         write!(config.output_file, "{}", self.scope.to_string())?;
@@ -374,27 +421,5 @@ impl Generate for Rust {
             .arg(&config.output_path)
             .status();
         Ok(())
-    }
-}
-
-fn rust() -> Box<impl Generate> {
-    Box::new(Rust::default())
-}
-
-fn python() -> Box<impl Generate> {
-    Box::new(Python)
-}
-
-impl Config {
-    pub fn detect(&self) -> Option<Box<dyn Generate>> {
-        match self
-            .output_path
-            .extension()
-            .map(|x| x.to_str().expect("Invalid extension"))
-        {
-            Some("rs") => Some(rust()),
-            Some("py") => Some(python()),
-            _ => None,
-        }
     }
 }
