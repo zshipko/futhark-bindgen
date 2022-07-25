@@ -123,34 +123,91 @@ impl Rust {
 
         self.scope
             .new_struct(&info.rust_name)
-            .field("inner", &info.ptr)
-            .vis("pub");
+            .field("ptr", &info.ptr)
+            .field("pub shape", &format!("[i64; {}]", a.rank))
+            .field("_t", "std::marker::PhantomData<&'a ()>")
+            .vis("pub")
+            .generic("'a");
 
         let new_fn = format!("futhark_new_{}_{}d", a.elemtype.to_str(), a.rank);
-        let array_impl = self.scope.new_impl(&info.rust_name);
-        let array_new = array_impl.new_fn("new").arg("ctx", "&Context").vis("pub");
+        let array_impl = self
+            .scope
+            .new_impl(&info.rust_name)
+            .generic("'a")
+            .target_generic("'a");
         let mut dim_params = Vec::new();
         for i in 0..a.rank {
-            let dim = format!("dim{i}");
-            array_new.arg(&dim, "i64");
+            let dim = format!("dims[{i}]");
             dim_params.push(dim);
         }
-        array_new.ret("Result<Self, Error>");
-        array_new.line("let ptr = unsafe {");
-        array_new.line(&format!(
-            "{}(ctx.inner, std::ptr::null(), {})",
-            &new_fn,
-            dim_params.join(", ")
-        ));
-        array_new.line("};");
-        array_new.line("if ptr.is_null() { return Err(Error::NullPtr); }");
-        array_new.line("Ok(Self { inner: ptr })");
+        let _array_new = array_impl
+            .new_fn("new")
+            .vis("pub")
+            .arg("ctx", "&'a Context")
+            .arg("dims", &format!("[i64; {}]", a.rank))
+            .ret("Result<Self, Error>")
+            .line("let ptr = unsafe {")
+            .line(&format!(
+                "    {}(ctx.context, std::ptr::null(), {})",
+                &new_fn,
+                dim_params.join(", ")
+            ))
+            .line("};")
+            .line("if ptr.is_null() { return Err(Error::NullPtr); }")
+            .line("Ok(Self { ptr, shape: dims, _t: std::marker::PhantomData })");
+
+        let _array_from_slice = array_impl
+            .new_fn("from_slice")
+            .vis("pub")
+            .arg("ctx", "&'a Context")
+            .arg("dims", &format!("[i64; {}]", a.rank))
+            .arg("data", &format!("&[{}]", a.elemtype.to_str()))
+            .ret("Result<Self, Error>")
+            .line("if data.len() != dims.iter().fold(1, |a, b| a * b) { return Err(Error::InvalidShape); }")
+            .line("let ptr = unsafe {")
+            .line(&format!(
+                "    {}(ctx.context, data.as_ptr(), {})",
+                &new_fn,
+                dim_params.join(", ")
+            ))
+            .line("};")
+            .line("if ptr.is_null() { return Err(Error::NullPtr); }")
+            .line("Ok(Self { ptr, _t: std::marker::PhantomData })");
+
+        let _array_values = array_impl
+            .new_fn("values")
+            .vis("pub")
+            .arg("ctx", "&'a Context")
+            .arg("data", &format!("&mut [{}]", a.elemtype.to_str()))
+            .ret("Result<(), Error>")
+            .line("if data.len() != self.shape.fold(1, |a, b| a * b) { return Err(Error::InvalidShape); }")
+            .line("let rc = unsafe {")
+            .line(&format!("    futhark_values_{}_{}d(ctx.context, self.ptr, data.as_mut_ptr())", a.elemtype.to_str(), a.rank))
+            .line("};")
+            .line("if rc != 0 { return Err(Error::Code(rc)) }")
+            .line("Ok(())");
+
+        let _array_drop = self
+            .scope
+            .new_impl(&info.rust_name)
+            .generic("'a")
+            .target_generic("'a")
+            .impl_trait("Drop")
+            .new_fn("drop")
+            .arg_mut_self()
+            .line("unsafe {")
+            .line(&format!(
+                "    futhark_free_{}_{}d(self.ptr);",
+                a.elemtype.to_str(),
+                a.rank
+            ))
+            .line("}");
 
         // new
 
         let mut new = ExternFn::new(new_fn)
             .arg("_", "*mut futhark_context")
-            .arg("_", &info.elem_ptr);
+            .arg("_", &info.elem_ptr.replace("*mut", "*const"));
 
         for i in 0..a.rank {
             new = new.arg(&format!("dim{i}"), "i64");
@@ -164,7 +221,7 @@ impl Rust {
             a.rank
         ))
         .arg("_", "*mut futhark_context")
-        .arg("_", "*mut u8")
+        .arg("_", "*const u8")
         .arg("offset", "i64");
 
         for i in 0..a.rank {
@@ -259,13 +316,44 @@ impl Generate for Rust {
         let error = self.scope.new_enum("Error").vis("pub").derive("Debug");
         error.new_variant("Code").tuple("std::os::raw::c_int");
         error.new_variant("NullPtr");
+        error.new_variant("InvalidShape");
 
         self.scope
             .new_struct("Context")
-            .field("inner", "*mut futhark_context")
+            .field("config", "*mut futhark_context_config")
+            .field("context", "*mut futhark_context")
             .vis("pub");
 
         let ctx = self.scope.new_impl("Context");
+        let _ctx_new = ctx
+            .new_fn("new")
+            .vis("pub")
+            .ret("Result<Self, Error>")
+            .line("let config = unsafe { futhark_context_config_new () };")
+            .line("if config.is_null() { return Err(Error::NullPtr) }")
+            .line("let context = unsafe { futhark_context_new(config) };")
+            .line("if context.is_null() { return Err(Error::NullPtr) }")
+            .line("Ok(Context { config, context })");
+
+        let _ctx_sync = ctx
+            .new_fn("sync")
+            .vis("pub")
+            .arg_self()
+            .ret("Result<(), Error>")
+            .line("let rc = unsafe { futhark_context_sync(self.context) };")
+            .line("if rc != 0 { return Err(Error::Code(rc)) }")
+            .line("Ok(())");
+
+        let _ctx_drop = self
+            .scope
+            .new_impl("Context")
+            .impl_trait("Drop")
+            .new_fn("drop")
+            .arg_mut_self()
+            .line("unsafe {")
+            .line("    futhark_context_free(self.context);")
+            .line("    futhark_context_config_free(self.config);")
+            .line("}");
 
         for (name, ty) in &library.manifest.types {
             match ty {
@@ -282,6 +370,9 @@ impl Generate for Rust {
         }
 
         write!(config.output_file, "{}", self.scope.to_string())?;
+        let _ = std::process::Command::new("rustfmt")
+            .arg(&config.output_path)
+            .status();
         Ok(())
     }
 }
