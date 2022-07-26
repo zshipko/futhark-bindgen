@@ -13,8 +13,8 @@ Currently supported languages:
 ### Command-line
 
 ```
-$ futhark-bindgen test.fut -o test.rs
-$ futhark-bindgen test.fut -o test.ml
+$ futhark-bindgen test.fut test.rs # Rust output
+$ futhark-bindgen test.fut test.ml # OCaml output
 ```
 
 See the output of `futhark-bindgen --help` for more information
@@ -24,8 +24,10 @@ See the output of `futhark-bindgen --help` for more information
 Add the following to your `Cargo.toml`
 
 ```toml
-[build-depencies]
-futhark-bindgen = {git = "https://github.com/zshipko/futhark-bindgen", features=["build"]}
+[build-depencies.futhark-bindgen]
+git = "https://github.com/zshipko/futhark-bindgen"
+default-features = false
+features = ["build"]
 ```
 
 In `build.rs`:
@@ -33,8 +35,8 @@ In `build.rs`:
 ```rust
 fn main() {
   let output = std::path::PathBuf::from(std::env::var("OUT_DIR"));
-  let output = output.join("myfile.rs");
-  futhark_bindgen::build(futhark_bindgen::Backend::C, "myfile.fut", "myfile.rs");
+  let output = output.join("mylib.rs");
+  futhark_bindgen::build(futhark_bindgen::Backend::C, "mylib.fut", "mylib.rs");
 }
 ```
 
@@ -42,7 +44,7 @@ In `src/lib.rs`:
 
 ```rust
 mod futhark {
-  include!(concat!(env!("OUT_DIR"), "/myfile.rs"));
+  include!(concat!(env!("OUT_DIR"), "/mylib.rs"));
 }
 ```
 
