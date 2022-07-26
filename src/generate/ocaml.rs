@@ -80,7 +80,15 @@ impl OCaml {
     }
 }
 
-fn ascii_titlecase(s: &str) -> String {
+fn first_uppercase(s: &str) -> String {
+    let mut s = s.to_string();
+    if let Some(r) = s.get_mut(0..1) {
+        r.make_ascii_uppercase();
+    }
+    s
+}
+
+fn first_lowercase(s: &str) -> String {
     let mut s = s.to_string();
     if let Some(r) = s.get_mut(0..1) {
         r.make_ascii_uppercase();
@@ -176,6 +184,7 @@ impl Generate for OCaml {
                     let rank = a.rank;
                     let ocaml_name = format!("array_{elemtype}_{rank}d");
                     self.typemap.insert(name.clone(), ocaml_name.clone());
+                    self.ctypes_map.insert(name.clone(), ocaml_name.clone());
                     let elem_ptr = format!("ptr {ctypes_elemtype}");
                     ml!("  let {ocaml_name} = typedef (ptr void) \"array_{elemtype}_{rank}d\"");
                     let mut new_args = vec!["context", &elem_ptr];
@@ -201,10 +210,51 @@ impl Generate for OCaml {
                             &format!("futhark_free_{elemtype}_{rank}d"),
                             "int",
                             vec!["context", &ocaml_name]
-                        )
+                        );
+                        "  {}", self.foreign_function(
+                            &format!("futhark_shape_{elemtype}_{rank}d"),
+                            "ptr int64_t",
+                            vec!["context", &ocaml_name]
+                        );
                     );
                 }
-                manifest::Type::Opaque(_) => todo!(),
+                manifest::Type::Opaque(ty) => {
+                    let new_fn = &ty.record.new;
+                    ml!("  let {name} = typedef (ptr void) \"{name}\"");
+                    let mut args = vec!["context".to_string(), format!("ptr {name}")];
+                    for f in ty.record.fields.iter() {
+                        let cty = self
+                            .ctypes_map
+                            .get(&f.r#type)
+                            .cloned()
+                            .unwrap_or_else(|| f.r#type.clone());
+                        args.push(cty);
+                    }
+                    let args = args.iter().map(|x| x.as_str()).collect();
+                    ml!("  {}", self.foreign_function(new_fn, "int", args));
+
+                    let free_fn = &ty.ops.free;
+                    ml!(
+                        "  {}",
+                        self.foreign_function(free_fn, "int", vec!["context", name])
+                    );
+
+                    for f in ty.record.fields.iter() {
+                        let cty = self
+                            .ctypes_map
+                            .get(&f.r#type)
+                            .cloned()
+                            .unwrap_or_else(|| f.r#type.clone());
+                        ml!(
+                            "  {}",
+                            self.foreign_function(
+                                &f.project,
+                                "int",
+                                vec!["context", &format!("ptr {cty}"), name]
+                            )
+                        );
+                    }
+                }
             }
         }
 
@@ -308,7 +358,10 @@ impl Generate for OCaml {
         ml!(
             "type futhark_array = {} ptr: unit ptr; shape: int array; ctx: Context.t {}",
             '{',
-            '}'
+            '}';
+             "type opaque = {} opaque_ptr: unit ptr; opaque_ctx: Context.t {}",
+            '{',
+            '}';
         );
 
         for (name, ty) in &library.manifest.types {
@@ -322,7 +375,7 @@ impl Generate for OCaml {
                         .cloned()
                         .unwrap_or_else(|| elemtype.clone());
                     let ocaml_name = self.typemap.get(name).unwrap();
-                    let module_name = ascii_titlecase(&ocaml_name);
+                    let module_name = first_uppercase(&ocaml_name);
                     ml!(
                         "module {} = struct", &module_name;
                         "  type t = futhark_array";
@@ -361,11 +414,16 @@ impl Generate for OCaml {
                         "";
                         "  let values t ba =";
                         "    let dims = Genarray.dims ba in";
-                        "    if not (Array.for_all2 Int.equal t.shape dims) then raise (Error (InvalidShape));";
+                        "    if not (Array.fold_left ( * ) 1 t.shape <> Array.fold_left ( * ) 1 dims) then raise (Error (InvalidShape));";
                         "    let rc = Bindings.futhark_values_{elemtype}_{rank}d t.ctx.Context.handle t.ptr (bigarray_start genarray ba) in";
                         "    if rc <> 0 then raise (Error (Code rc))";
                         "";
                         "  let shape t = t.shape";
+                        "";
+                        "  let raw_shape ctx ptr = ";
+                        "    let s = Bindings.futhark_shape_{elemtype}_{rank}d ctx ptr in";
+                        "    Array.init {rank} (fun i -> Int64.to_int !@ (s +@ i))";
+                        "  let _ = raw_shape";
                         "end"
                     );
 
@@ -392,7 +450,113 @@ impl Generate for OCaml {
                         "end"
                     );
                 }
-                manifest::Type::Opaque(_) => todo!(),
+                manifest::Type::Opaque(ty) => {
+                    let module_name = first_uppercase(name);
+                    self.typemap
+                        .insert(name.clone(), format!("{module_name}.t"));
+
+                    ml!(
+                        "module {module_name} = struct";
+                        "  type t = opaque";
+                        "  let t = Bindings.{name}";
+                        "  let _ = t";
+                    );
+
+                    mli!(
+                        "module {module_name} : sig";
+                        "  type t";
+                    );
+
+                    let free_fn = &ty.ops.free;
+                    ml!("  let free t = ignore (Bindings.{free_fn} t.opaque_ctx.Context.handle t.opaque_ptr)");
+                    ml_no_newline!("  let v ctx");
+                    mli_no_newline!("  val v: Context.t");
+
+                    let mut args = vec![];
+                    for f in ty.record.fields.iter() {
+                        let t = self
+                            .typemap
+                            .get(&f.r#type)
+                            .cloned()
+                            .unwrap_or_else(|| f.r#type.clone());
+                        ml_no_newline!(" field{}", f.name);
+
+                        if t.contains("array_") {
+                            args.push(format!("field{}.ptr", f.name));
+
+                            mli_no_newline!(" -> {}.t", first_uppercase(&t));
+                        } else if t.contains(".t") {
+                            args.push(format!("field{}.opaque_ptr", f.name));
+
+                            mli_no_newline!(" -> {t}");
+                        } else {
+                            args.push(format!("field{}", f.name));
+
+                            mli_no_newline!(" -> {t}");
+                        }
+                    }
+
+                    ml!(" = ");
+                    mli!(" -> t");
+
+                    let new_fn = &ty.record.new;
+                    ml!(
+                        "    let ptr = allocate (ptr void) null in";
+                        "    let rc = Bindings.{new_fn} ctx.Context.handle ptr {} in", args.join(" ");
+                        "    if rc <> 0 then raise (Error (Code rc));";
+                        "    let opaque_ptr = !@ptr in";
+                        "    let t = {} opaque_ptr; opaque_ctx = ctx {} in", '{', '}';
+                        "    Gc.finalise free t; t";
+                    );
+
+                    for f in ty.record.fields.iter() {
+                        let t = self
+                            .typemap
+                            .get(&f.r#type)
+                            .cloned()
+                            .unwrap_or_else(|| f.r#type.clone());
+                        let name = &f.name;
+                        let project = &f.project;
+
+                        let s = if t.contains("array_") {
+                            format!("Bindings.{t}")
+                        } else {
+                            t.clone()
+                        };
+
+                        ml!(
+                            "  let get_{name} t =";
+                            "    let out = allocate_n ~count:1 {s} in";
+                            "    let rc = Bindings.{project} t.opaque_ctx.Context.handle out t.opaque_ptr in";
+                            "    if rc <> 0 then raise (Error (Code rc));";
+                        );
+
+                        if t.contains(".t") {
+                            ml!(
+                                "    let t = {} opaque_ptr = !@out; opaque_ctx = t.opaque_ctx {} in", '{', '}';
+                                "    Gc.finalise free t; t";
+                            );
+                        } else if t.contains("array_") {
+                            let array = first_uppercase(&t);
+                            ml!(
+                                "    let shape = {array}.raw_shape t.opaque_ctx.Context.handle !@out in";
+                                "    let t = {} ptr = !@out; ctx = t.opaque_ctx; shape {} in", '{', '}';
+                                "    Gc.finalise {array}.free t; t"
+                            );
+                        } else {
+                            ml!("    !@out");
+                        }
+
+                        if t.contains("array_") {
+                            mli!("  val get_{name}: t -> {}.t", first_uppercase(&t));
+                        } else {
+                            mli!("  val get_{name}: t -> {t}");
+                        }
+                    }
+
+                    ml!("end");
+                    mli!("end");
+                }
             }
         }
 
@@ -411,7 +575,7 @@ impl Generate for OCaml {
 
                 // Transform into `Module.t`
                 if ocaml_elemtype.contains("array_") {
-                    ocaml_elemtype = ascii_titlecase(&ocaml_elemtype) + ".t"
+                    ocaml_elemtype = first_uppercase(&ocaml_elemtype) + ".t"
                 } else {
                     // Otherwise convert to Ctypes.ptr
                     ocaml_elemtype += " Ctypes.ptr";
@@ -438,14 +602,14 @@ impl Generate for OCaml {
 
                 // Transform into `Module.t`
                 if ocaml_elemtype.contains("array_") {
-                    ocaml_elemtype = ascii_titlecase(&ocaml_elemtype) + ".t"
+                    ocaml_elemtype = first_uppercase(&ocaml_elemtype) + ".t"
                 }
 
                 mli_no_newline!(" -> {}", ocaml_elemtype); // mli
             }
             mli!(" -> unit"); // mli
 
-            ml!(
+            ml_no_newline!(
                 " =";
                 "    let rc = Bindings.futhark_entry_{name} ctx.Context.handle";
             );
@@ -464,6 +628,8 @@ impl Generate for OCaml {
                 };
                 if t.contains("array_") {
                     ml_no_newline!(" out{i}.ptr");
+                } else if t.contains(".t") {
+                    ml_no_newline!(" input{i}.opaque_ptr");
                 } else {
                     ml_no_newline!(" out{i}");
                 }
@@ -477,6 +643,8 @@ impl Generate for OCaml {
                 };
                 if t.contains("array_") {
                     ml_no_newline!(" input{i}.ptr");
+                } else if t.contains(".t") {
+                    ml_no_newline!(" input{i}.opaque_ptr");
                 } else {
                     ml_no_newline!(" input{i}");
                 }
