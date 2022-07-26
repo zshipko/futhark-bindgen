@@ -7,6 +7,14 @@ pub struct Rust {
     scope: codegen::Scope,
 }
 
+fn type_is_array(t: &str) -> bool {
+    t.contains("ArrayF") || t.contains("ArrayI") || t.contains("ArrayU") || t.contains("ArrayB")
+}
+
+fn type_is_opaque(a: &str) -> bool {
+    a.contains("futhark_opaque_")
+}
+
 const RUST_TYPE_MAP: &[(&'static str, &'static str)] = &[];
 
 impl Default for Rust {
@@ -90,12 +98,14 @@ impl Rust {
             elem_ptr: format!("*mut {}", elemtype),
         };
 
+        // Original array type (from C)
         self.scope
             .new_struct(&info.original_name)
             .allow("non_camel_case_types")
             .repr("C")
             .field("_private", "[u8; 0]");
 
+        // Rust wrapper
         self.scope
             .new_struct(&info.rust_name)
             .field("ptr", &info.ptr)
@@ -106,6 +116,7 @@ impl Rust {
             .vis("pub")
             .doc(&format!("A wrapper around {}", info.original_name));
 
+        // Build Array::new
         let new_fn = format!("futhark_new_{elemtype}_{rank}d");
         let array_impl = self
             .scope
@@ -135,6 +146,7 @@ impl Rust {
             .line("if ptr.is_null() { return Err(Error::NullPtr); }")
             .line("Ok(Self { ptr: ptr as *mut _, shape: dims, ctx: ctx.context, _t: std::marker::PhantomData })");
 
+        // Array::from_slice
         let _array_from_slice = array_impl
             .new_fn("from_slice")
             .vis("pub")
@@ -154,6 +166,7 @@ impl Rust {
             .line("if ptr.is_null() { return Err(Error::NullPtr); }")
             .line("Ok(Self { ptr: ptr as *mut _, shape: dims, ctx: ctx.context, _t: std::marker::PhantomData })");
 
+        // Array::values
         let _array_values = array_impl
             .new_fn("values")
             .vis("pub")
@@ -168,6 +181,7 @@ impl Rust {
             .line("if rc != 0 { return Err(Error::Code(rc)) }")
             .line("Ok(())");
 
+        // Array::from_raw
         let _array_from_raw = array_impl
             .new_fn("from_raw")
             .allow("unused")
@@ -187,6 +201,7 @@ impl Rust {
             .line("}")
             .line("Self { ctx, shape, ptr: data, _t: std::marker::PhantomData }");
 
+        // Implement Drop for Array
         let _array_drop = self
             .scope
             .new_impl(&info.rust_name)
@@ -201,13 +216,13 @@ impl Rust {
             ))
             .line("}");
 
+        // Extern definitions
+
         ExternFn::new(&format!("futhark_shape_{elemtype}_{rank}d"))
             .arg("_", "*mut futhark_context")
             .arg("_", &info.ptr)
             .ret("*const i64")
             .gen(self);
-
-        // new
 
         let mut new = ExternFn::new(new_fn)
             .arg("_", "*mut futhark_context")
@@ -253,6 +268,14 @@ impl Rust {
         Ok(info)
     }
 
+    fn get_type(typemap: &BTreeMap<String, String>, t: &str) -> String {
+        let a = typemap.get(t);
+        match a {
+            Some(t) => t.clone(),
+            None => t.to_string(),
+        }
+    }
+
     fn generate_opaque_type(
         &mut self,
         name: &str,
@@ -261,11 +284,15 @@ impl Rust {
         let original_name = format!("futhark_opaque_{name}");
         let rust_name = format!("{}", first_uppercase(name));
 
+        // C type
+
         self.scope
             .new_struct(&original_name)
             .allow("non_camel_case_types")
             .repr("C")
             .field("_private", "[u8; 0]");
+
+        // Extern definitions
 
         let mut new = ExternFn::new(format!("futhark_new_opaque_{name}"))
             .arg("_", "*mut futhark_context")
@@ -273,12 +300,7 @@ impl Rust {
             .ret("std::os::raw::c_int");
 
         for field in ty.record.fields.iter() {
-            let t = self.typemap.get(&field.r#type);
-            let t = match t {
-                Some(t) => t,
-                None => &field.r#type,
-            };
-
+            let t = Self::get_type(&self.typemap, &field.r#type);
             new = new.arg(format!("field{}", field.name), t);
         }
         new.gen(self);
@@ -290,11 +312,7 @@ impl Rust {
             .gen(self);
 
         for field in ty.record.fields.iter() {
-            let t = self.typemap.get(&field.r#type);
-            let t = match t {
-                Some(t) => t,
-                None => &field.r#type,
-            };
+            let t = Self::get_type(&self.typemap, &field.r#type);
 
             let _project = ExternFn::new(format!("futhark_project_opaque_{name}_{}", field.name))
                 .arg("_", "*mut futhark_context")
@@ -304,6 +322,8 @@ impl Rust {
                 .gen(self);
         }
 
+        // Rust struct definition
+
         self.scope
             .new_struct(&rust_name)
             .vis("pub")
@@ -312,6 +332,7 @@ impl Rust {
             .field("ctx", "*mut futhark_context")
             .field("_t", "std::marker::PhantomData<&'a ()>");
 
+        // Implement drop
         self.scope
             .new_impl(&rust_name)
             .generic("'a")
@@ -325,12 +346,14 @@ impl Rust {
             ))
             .line("}");
 
+        // Open impl block
         let opaque = self
             .scope
             .new_impl(&rust_name)
             .generic("'a")
             .target_generic("'a");
 
+        // Opaque::from_raw
         let _opaque_from_raw = opaque
             .new_fn("from_raw")
             .allow("unused")
@@ -339,6 +362,7 @@ impl Rust {
             .ret("Self")
             .line("Self { ctx, data, _t: std::marker::PhantomData }");
 
+        // Opaque::new
         let new_fn = opaque
             .new_fn("new")
             .vis("pub")
@@ -347,27 +371,18 @@ impl Rust {
 
         let mut args = vec![];
         for field in ty.record.fields.iter() {
-            let t = self.typemap.get(&field.r#type);
-            let a = match t {
-                Some(t) => t,
-                None => &field.r#type,
-            };
+            let a = Self::get_type(&self.typemap, &field.r#type);
+            let t = Self::get_type(&self.typemap, &a);
 
-            let x = self.typemap.get(a);
-            let t = match x {
-                Some(t) => t,
-                None => a,
-            };
-
-            let u = if t == &field.r#type {
+            let u = if &t == &field.r#type {
                 format!("{t}")
             } else {
                 format!("&{t}")
             };
 
-            if a.contains("opaque") {
+            if type_is_opaque(&a) {
                 args.push(format!("field{}.data", field.name));
-            } else if t.contains("Array") {
+            } else if type_is_array(&t) {
                 args.push(format!("field{}.ptr", field.name));
             } else {
                 args.push(format!("field{}", field.name));
@@ -387,18 +402,10 @@ impl Rust {
             .line("if rc != 0 { return Err(Error::Code(rc)); }")
             .line("Ok(Self {data: out, ctx: ctx.context, _t: std::marker::PhantomData})");
 
+        // Implement get functions
         for field in ty.record.fields.iter() {
-            let a = self.typemap.get(&field.r#type);
-            let a = match a {
-                Some(t) => t,
-                None => &field.r#type,
-            };
-
-            let x = self.typemap.get(a);
-            let t = match x {
-                Some(t) => t,
-                None => a,
-            };
+            let a = Self::get_type(&self.typemap, &field.r#type);
+            let t = Self::get_type(&self.typemap, &a);
 
             let func = opaque
                 .new_fn(&format!("get_{}", field.name))
@@ -412,9 +419,10 @@ impl Rust {
                 .line("if rc != 0 { return Err(Error::Code(rc)); }")
                 .line("let out = unsafe { out.assume_init() };");
 
-            if a.contains("opaque") {
+            // If the output type is an array or opaque type then we need to wrap the return value
+            if type_is_opaque(&a) {
                 func.line(&format!("Ok({t}::from_raw(self.ctx, out))"));
-            } else if t.contains("Array") {
+            } else if type_is_array(&t) {
                 func.line(&format!("Ok({t}::from_raw(self.ctx, out))"));
             } else {
                 func.line("Ok(out)");
@@ -444,51 +452,36 @@ impl Rust {
 
         let mut call_args = Vec::new();
 
+        // Output arguments
         for (i, arg) in entry.outputs.iter().enumerate() {
-            let a = self.typemap.get(&arg.r#type);
-            let a = match a {
-                Some(t) => t,
-                None => &arg.r#type,
-            };
+            let a = Self::get_type(&self.typemap, &arg.r#type);
 
             let name = format!("out{i}");
             c = c.arg(&name, format!("*mut {a}"));
 
-            let x = self.typemap.get(a);
-            let t = match x {
-                Some(t) => t,
-                None => a,
-            };
-
+            let t = Self::get_type(&self.typemap, &a);
             func.arg(&name, &format!("&mut {t}"));
-            if t.contains("Array") {
+            if type_is_array(&t) {
                 call_args.push(format!("{name}.ptr as *mut _"))
-            } else if a.contains("opaque") {
+            } else if type_is_opaque(&a) {
                 call_args.push(format!("{name}.data as *mut _"));
             } else {
                 call_args.push(format!("{name} as *mut _"));
             }
         }
 
+        // Input arguments
         for (i, arg) in entry.inputs.iter().enumerate() {
-            let a = self.typemap.get(&arg.r#type);
-            let a = match a {
-                Some(t) => t,
-                None => &arg.r#type,
-            };
+            let a = Self::get_type(&self.typemap, &arg.r#type);
             let name = format!("input{i}");
             c = c.arg(&name, a.replace("*mut", "*const"));
 
-            let x = self.typemap.get(a);
-            let t = match x {
-                Some(t) => t,
-                None => a,
-            };
+            let t = Self::get_type(&self.typemap, &a);
 
-            if t.contains("Array") {
+            if type_is_array(&t) {
                 func.arg(&name, &format!("&{t}"));
                 call_args.push(format!("{name}.ptr as *mut _"));
-            } else if a.contains("opaque") {
+            } else if type_is_opaque(&a) {
                 func.arg(&name, &format!("&{t}"));
                 call_args.push(format!("{name}.data as *mut _"));
             } else {

@@ -47,6 +47,14 @@ const OCAML_BA_TYPE_MAP: &[(&'static str, &'static str)] = &[
     ("f64", "Bigarray.float64_elt"),
 ];
 
+fn type_is_array(t: &str) -> bool {
+    t.contains("array_f") || t.contains("array_i") || t.contains("array_u") || t.contains("array_b")
+}
+
+fn type_is_opaque(t: &str) -> bool {
+    t.contains(".t")
+}
+
 impl Default for OCaml {
     fn default() -> Self {
         let typemap = OCAML_TYPE_MAP
@@ -78,6 +86,24 @@ impl OCaml {
             "let {name} = Foreign.foreign \"{name}\" ({} @-> returning ({ret}))",
             args.join(" @-> ")
         )
+    }
+
+    fn get_ctype(&self, t: &str) -> String {
+        self.ctypes_map
+            .get(t)
+            .cloned()
+            .unwrap_or_else(|| t.to_string())
+    }
+
+    fn get_type(&self, t: &str) -> String {
+        self.typemap
+            .get(t)
+            .cloned()
+            .unwrap_or_else(|| t.to_string())
+    }
+
+    fn get_ba_type(&self, t: &str) -> String {
+        self.ba_map.get(t).cloned().unwrap_or_else(|| t.to_string())
     }
 }
 
@@ -161,11 +187,7 @@ impl Generate for OCaml {
             match ty {
                 manifest::Type::Array(a) => {
                     let elemtype = a.elemtype.to_str().to_string();
-                    let ctypes_elemtype = self
-                        .ctypes_map
-                        .get(&elemtype)
-                        .cloned()
-                        .unwrap_or_else(|| elemtype.clone());
+                    let ctypes_elemtype = self.get_ctype(&elemtype);
                     let rank = a.rank;
                     let ocaml_name = format!("array_{elemtype}_{rank}d");
                     self.typemap.insert(name.clone(), ocaml_name.clone());
@@ -247,12 +269,9 @@ impl Generate for OCaml {
             let mut args = vec!["context".to_string()];
 
             for out in &entry.outputs {
-                let t = self.typemap.get(&out.r#type);
-                let t = match t {
-                    Some(t) => t.clone(),
-                    None => out.r#type.clone(),
-                };
-                if t.contains("array_") {
+                let t = self.get_ctype(&out.r#type);
+
+                if type_is_array(&t) || type_is_opaque(&t) {
                     args.push(t);
                 } else {
                     args.push(format!("ptr {t}"));
@@ -260,11 +279,7 @@ impl Generate for OCaml {
             }
 
             for input in &entry.inputs {
-                let t = self.typemap.get(&input.r#type);
-                let t = match t {
-                    Some(t) => t.clone(),
-                    None => input.r#type.clone(),
-                };
+                let t = self.get_type(&input.r#type);
                 args.push(t);
             }
 
@@ -354,11 +369,7 @@ impl Generate for OCaml {
                 manifest::Type::Array(a) => {
                     let rank = a.rank;
                     let elemtype = a.elemtype.to_str().to_string();
-                    let ctypes_elemtype = self
-                        .ctypes_map
-                        .get(&elemtype)
-                        .cloned()
-                        .unwrap_or_else(|| elemtype.clone());
+                    let ctypes_elemtype = self.get_ctype(&elemtype);
                     let ocaml_name = self.typemap.get(name).unwrap();
                     let module_name = first_uppercase(&ocaml_name);
                     ml!(
@@ -412,17 +423,8 @@ impl Generate for OCaml {
                         "end"
                     );
 
-                    let ocaml_elemtype = self
-                        .ctypes_map
-                        .get(&elemtype)
-                        .cloned()
-                        .unwrap_or_else(|| elemtype.clone());
-
-                    let ba_elemtype = self
-                        .ba_map
-                        .get(&elemtype)
-                        .cloned()
-                        .unwrap_or_else(|| elemtype.clone());
+                    let ocaml_elemtype = self.get_type(&elemtype);
+                    let ba_elemtype = self.get_ba_type(&elemtype);
 
                     // mli
                     mli!(
@@ -459,18 +461,14 @@ impl Generate for OCaml {
 
                     let mut args = vec![];
                     for f in ty.record.fields.iter() {
-                        let t = self
-                            .typemap
-                            .get(&f.r#type)
-                            .cloned()
-                            .unwrap_or_else(|| f.r#type.clone());
+                        let t = self.get_type(&f.r#type);
                         ml_no_newline!(" field{}", f.name);
 
-                        if t.contains("array_") {
+                        if type_is_array(&t) {
                             args.push(format!("field{}.ptr", f.name));
 
                             mli_no_newline!(" -> {}.t", first_uppercase(&t));
-                        } else if t.contains(".t") {
+                        } else if type_is_opaque(&t) {
                             args.push(format!("field{}.opaque_ptr", f.name));
 
                             mli_no_newline!(" -> {t}");
@@ -495,15 +493,11 @@ impl Generate for OCaml {
                     );
 
                     for f in ty.record.fields.iter() {
-                        let t = self
-                            .typemap
-                            .get(&f.r#type)
-                            .cloned()
-                            .unwrap_or_else(|| f.r#type.clone());
+                        let t = self.get_type(&f.r#type);
                         let name = &f.name;
                         let project = &f.project;
 
-                        let s = if t.contains("array_") {
+                        let s = if type_is_array(&t) {
                             format!("Bindings.{t}")
                         } else {
                             t.clone()
@@ -516,12 +510,12 @@ impl Generate for OCaml {
                             "    if rc <> 0 then raise (Error (Code rc));";
                         );
 
-                        if t.contains(".t") {
+                        if type_is_opaque(&t) {
                             ml!(
                                 "    let t = {} opaque_ptr = !@out; opaque_ctx = t.opaque_ctx {} in", '{', '}';
                                 "    Gc.finalise free t; t";
                             );
-                        } else if t.contains("array_") {
+                        } else if type_is_array(&t) {
                             let array = first_uppercase(&t);
                             ml!(
                                 "    let shape = {array}.raw_shape t.opaque_ctx.Context.handle !@out in";
@@ -532,7 +526,7 @@ impl Generate for OCaml {
                             ml!("    !@out");
                         }
 
-                        if t.contains("array_") {
+                        if type_is_array(&t) {
                             mli!("  val get_{name}: t -> {}.t", first_uppercase(&t));
                         } else {
                             mli!("  val get_{name}: t -> {t}");
@@ -552,11 +546,7 @@ impl Generate for OCaml {
             mli_no_newline!("  val {}: Context.t", name); // mli
 
             for (i, out) in entry.outputs.iter().enumerate() {
-                let mut ocaml_elemtype = self
-                    .typemap
-                    .get(&out.r#type)
-                    .cloned()
-                    .unwrap_or_else(|| out.r#type.clone());
+                let mut ocaml_elemtype = self.get_type(&out.r#type);
 
                 // Transform into `Module.t`
                 if ocaml_elemtype.contains("array_") {
@@ -579,14 +569,10 @@ impl Generate for OCaml {
             for (i, input) in entry.inputs.iter().enumerate() {
                 ml_no_newline!(" input{i}");
 
-                let mut ocaml_elemtype = self
-                    .typemap
-                    .get(&input.r#type)
-                    .cloned()
-                    .unwrap_or_else(|| input.r#type.clone());
+                let mut ocaml_elemtype = self.get_type(&input.r#type);
 
                 // Transform into `Module.t`
-                if ocaml_elemtype.contains("array_") {
+                if type_is_array(&ocaml_elemtype) {
                     ocaml_elemtype = first_uppercase(&ocaml_elemtype) + ".t"
                 }
 
@@ -600,20 +586,16 @@ impl Generate for OCaml {
             );
 
             for (i, out) in entry.outputs.iter().enumerate() {
-                let t = self.typemap.get(&out.r#type);
-                let t = match t {
-                    Some(t) => t.clone(),
-                    None => out.r#type.clone(),
-                };
+                let t = self.get_type(&out.r#type);
 
                 let i = if entry.outputs.len() == 1 {
                     String::new()
                 } else {
                     format!("{i}")
                 };
-                if t.contains("array_") {
+                if type_is_array(&t) {
                     ml_no_newline!(" out{i}.ptr");
-                } else if t.contains(".t") {
+                } else if type_is_opaque(&t) {
                     ml_no_newline!(" input{i}.opaque_ptr");
                 } else {
                     ml_no_newline!(" out{i}");
@@ -621,14 +603,10 @@ impl Generate for OCaml {
             }
 
             for (i, input) in entry.inputs.iter().enumerate() {
-                let t = self.typemap.get(&input.r#type);
-                let t = match t {
-                    Some(t) => t.clone(),
-                    None => input.r#type.clone(),
-                };
-                if t.contains("array_") {
+                let t = self.get_type(&input.r#type);
+                if type_is_array(&t) {
                     ml_no_newline!(" input{i}.ptr");
-                } else if t.contains(".t") {
+                } else if type_is_opaque(&t) {
                     ml_no_newline!(" input{i}.opaque_ptr");
                 } else {
                     ml_no_newline!(" input{i}");

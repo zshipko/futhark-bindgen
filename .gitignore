@@ -1,2 +1,5 @@
 target
 Cargo.lock
+example.c
+example.h
+example.json
