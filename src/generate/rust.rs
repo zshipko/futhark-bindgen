@@ -75,19 +75,18 @@ struct ArrayInfo {
 
 impl Rust {
     fn generate_array_type(&mut self, a: &manifest::ArrayType) -> Result<ArrayInfo, Error> {
-        let original_name = format!("futhark_{}_{}d", a.elemtype.to_str(), a.rank);
-        let rust_name = format!(
-            "Array{}D{}",
-            a.elemtype.to_str().to_ascii_uppercase(),
-            a.rank
-        );
+        let elemtype = a.elemtype.to_str();
+        let rank = a.rank;
+
+        let original_name = format!("futhark_{elemtype}_{rank}d");
+        let rust_name = format!("Array{}D{rank}", elemtype.to_ascii_uppercase(),);
         let ptr = format!("*mut {original_name}");
         let info = ArrayInfo {
             original_name,
             ptr,
             rust_name,
-            elem: a.elemtype.to_str().to_string(),
-            elem_ptr: format!("*mut {}", a.elemtype.to_str()),
+            elem: elemtype.to_string(),
+            elem_ptr: format!("*mut {}", elemtype),
         };
 
         self.scope
@@ -105,7 +104,7 @@ impl Rust {
             .vis("pub")
             .doc(&format!("A wrapper around {}", info.original_name));
 
-        let new_fn = format!("futhark_new_{}_{}d", a.elemtype.to_str(), a.rank);
+        let new_fn = format!("futhark_new_{elemtype}_{rank}d");
         let array_impl = self
             .scope
             .new_impl(&info.rust_name)
@@ -139,8 +138,8 @@ impl Rust {
             .vis("pub")
             .doc("Create a new array from an existing slice")
             .arg("ctx", "&'a Context")
-            .arg("dims", &format!("[i64; {}]", a.rank))
-            .arg("data", &format!("&[{}]", a.elemtype.to_str()))
+            .arg("dims", &format!("[i64; {rank}]"))
+            .arg("data", &format!("&[{elemtype}]"))
             .ret("Result<Self, Error>")
             .line("if data.len() as i64 != dims.iter().fold(1, |a, b| a * b) { return Err(Error::InvalidShape); }")
             .line("let ptr = unsafe {")
@@ -158,11 +157,11 @@ impl Rust {
             .vis("pub")
             .doc("Load array data into a mutable slice")
             .arg_ref_self()
-            .arg("data", &format!("&mut [{}]", a.elemtype.to_str()))
+            .arg("data", &format!("&mut [{elemtype}]"))
             .ret("Result<(), Error>")
             .line("if data.len() as i64 != self.shape.iter().fold(1, |a, b| a * b) { return Err(Error::InvalidShape); }")
             .line("let rc = unsafe {")
-            .line(&format!("    futhark_values_{}_{}d(self.ctx, self.ptr as *mut _, data.as_mut_ptr())", a.elemtype.to_str(), a.rank))
+            .line(&format!("    futhark_values_{elemtype}_{rank}d(self.ctx, self.ptr as *mut _, data.as_mut_ptr())"))
             .line("};")
             .line("if rc != 0 { return Err(Error::Code(rc)) }")
             .line("Ok(())");
@@ -177,9 +176,7 @@ impl Rust {
             .arg_mut_self()
             .line("unsafe {")
             .line(&format!(
-                "    futhark_free_{}_{}d(self.ctx, self.ptr as *mut _);",
-                a.elemtype.to_str(),
-                a.rank
+                "    futhark_free_{elemtype}_{rank}d(self.ctx, self.ptr as *mut _);",
             ))
             .line("}");
 
@@ -195,14 +192,10 @@ impl Rust {
 
         new.ret(&info.ptr).gen(self);
 
-        let mut new_raw = ExternFn::new(format!(
-            "futhark_new_raw_{}_{}d",
-            a.elemtype.to_str(),
-            a.rank
-        ))
-        .arg("_", "*mut futhark_context")
-        .arg("_", "*const u8")
-        .arg("offset", "i64");
+        let mut new_raw = ExternFn::new(format!("futhark_new_raw_{elemtype}_{rank}d",))
+            .arg("_", "*mut futhark_context")
+            .arg("_", "*const u8")
+            .arg("offset", "i64");
 
         for i in 0..a.rank {
             new_raw = new_raw.arg(&format!("dim{i}"), "i64");
@@ -211,33 +204,25 @@ impl Rust {
         new_raw.ret(&info.ptr).gen(self);
 
         // free
-        let _free = ExternFn::new(format!("futhark_free_{}_{}d", a.elemtype.to_str(), a.rank))
+        let _free = ExternFn::new(format!("futhark_free_{elemtype}_{rank}d"))
             .arg("_", "*mut futhark_context")
             .arg("_", &info.ptr)
             .ret("std::os::raw::c_int")
             .gen(self);
 
         // values
-        let _values = ExternFn::new(format!(
-            "futhark_values_{}_{}d",
-            a.elemtype.to_str(),
-            a.rank
-        ))
-        .arg("_", "*mut futhark_context")
-        .arg("_", &info.ptr)
-        .arg("_", &info.elem_ptr)
-        .ret("std::os::raw::c_int")
-        .gen(self);
+        let _values = ExternFn::new(format!("futhark_values_{elemtype}_{rank}d",))
+            .arg("_", "*mut futhark_context")
+            .arg("_", &info.ptr)
+            .arg("_", &info.elem_ptr)
+            .ret("std::os::raw::c_int")
+            .gen(self);
 
-        let _values_raw = ExternFn::new(format!(
-            "futhark_values_raw_{}_{}d",
-            a.elemtype.to_str(),
-            a.rank
-        ))
-        .arg("_", "*mut futhark_context")
-        .arg("_", &info.ptr)
-        .ret("*mut u8")
-        .gen(self);
+        let _values_raw = ExternFn::new(format!("futhark_values_raw_{elemtype}_{rank}d",))
+            .arg("_", "*mut futhark_context")
+            .arg("_", &info.ptr)
+            .ret("*mut u8")
+            .gen(self);
         Ok(info)
     }
 
@@ -277,12 +262,11 @@ impl Rust {
                 None => t,
             };
 
-            if t.contains("Array_") {
-                func.arg(&name, &format!("&mut {t}"));
+            func.arg(&name, &format!("&mut {t}"));
+            if t.contains("Array") {
                 call_args.push(format!("{name}.ptr as *mut _"))
             } else {
-                func.arg(&name, t);
-                call_args.push(name);
+                call_args.push(format!("{name} as *mut _"));
             }
         }
 
@@ -301,7 +285,7 @@ impl Rust {
                 None => t,
             };
 
-            if t.contains("Array_") {
+            if t.contains("Array") {
                 func.arg(&name, &format!("&{t}"));
                 call_args.push(format!("{name}.ptr as *mut _"));
             } else {
