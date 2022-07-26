@@ -19,7 +19,7 @@ $ futhark-bindgen test.fut -o test.ml
 
 See the output of `futhark-bindgen --help` for more information
 
-### build.rs
+### Rust+build.rs
 
 Add the following to your `Cargo.toml`
 
@@ -44,4 +44,23 @@ In `src/lib.rs`:
 mod futhark {
   include!(concat!(env!("OUT_DIR"), "/myfile.rs"));
 }
+```
+
+## OCaml+dune
+
+Add the following to your `dune` file:
+
+```
+(library
+  (name mylib)
+  (public_name mylib)
+  (libraries ctypes.foreign)
+  (foreign_stubs (language c) (names futhark_output)))
+```
+
+Using OCaml you will have to manually generate the bindings, or call `futhark-bindgen"
+from your `dune` file:
+
+```sh
+$ futhark-bindgen mylib.fut -o mylib.ml
 ```
