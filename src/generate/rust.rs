@@ -1,3 +1,4 @@
+use crate::generate::first_uppercase;
 use crate::*;
 use std::io::Write;
 
@@ -91,6 +92,7 @@ impl Rust {
 
         self.scope
             .new_struct(&info.original_name)
+            .allow("non_camel_case_types")
             .repr("C")
             .field("_private", "[u8; 0]");
 
@@ -122,7 +124,7 @@ impl Rust {
             .arg("ctx", "&'a Context")
             .arg("dims", &format!("[i64; {}]", a.rank))
             .ret("Result<Self, Error>")
-            .line("let data = vec![0 as {}; dims.iter().fold(1, |a, b| a * b)];")
+            .line(&format!("let data = vec![0 as {elemtype}; dims.iter().fold(1, |a, b| a * *b as usize)];"))
             .line("let ptr = unsafe {")
             .line(&format!(
                 "    {}(ctx.context, data.as_ptr(), {})",
@@ -166,6 +168,25 @@ impl Rust {
             .line("if rc != 0 { return Err(Error::Code(rc)) }")
             .line("Ok(())");
 
+        let _array_from_raw = array_impl
+            .new_fn("from_raw")
+            .allow("unused")
+            .arg("ctx", "*mut futhark_context")
+            .arg("data", &info.ptr)
+            .ret("Self")
+            .line(&format!(
+                "let len_ptr = unsafe {} futhark_shape_{elemtype}_{rank}d(ctx, data) {};",
+                '{', '}'
+            ))
+            .line(&format!("let mut shape = [0i64; {rank}];"))
+            .line("unsafe {")
+            .line(&format!(
+                "for i in 0 .. {rank} {} shape[i] = *len_ptr.add(i); {}",
+                '{', '}'
+            ))
+            .line("}")
+            .line("Self { ctx, shape, ptr: data, _t: std::marker::PhantomData }");
+
         let _array_drop = self
             .scope
             .new_impl(&info.rust_name)
@@ -179,6 +200,12 @@ impl Rust {
                 "    futhark_free_{elemtype}_{rank}d(self.ctx, self.ptr as *mut _);",
             ))
             .line("}");
+
+        ExternFn::new(&format!("futhark_shape_{elemtype}_{rank}d"))
+            .arg("_", "*mut futhark_context")
+            .arg("_", &info.ptr)
+            .ret("*const i64")
+            .gen(self);
 
         // new
 
@@ -226,6 +253,177 @@ impl Rust {
         Ok(info)
     }
 
+    fn generate_opaque_type(
+        &mut self,
+        name: &str,
+        ty: &manifest::OpaqueType,
+    ) -> Result<String, Error> {
+        let original_name = format!("futhark_opaque_{name}");
+        let rust_name = format!("{}", first_uppercase(name));
+
+        self.scope
+            .new_struct(&original_name)
+            .allow("non_camel_case_types")
+            .repr("C")
+            .field("_private", "[u8; 0]");
+
+        let mut new = ExternFn::new(format!("futhark_new_opaque_{name}"))
+            .arg("_", "*mut futhark_context")
+            .arg("out", format!("*mut *mut {original_name}"))
+            .ret("std::os::raw::c_int");
+
+        for field in ty.record.fields.iter() {
+            let t = self.typemap.get(&field.r#type);
+            let t = match t {
+                Some(t) => t,
+                None => &field.r#type,
+            };
+
+            new = new.arg(format!("field{}", field.name), t);
+        }
+        new.gen(self);
+
+        let _free = ExternFn::new(format!("futhark_free_opaque_{name}"))
+            .arg("_", "*mut futhark_context")
+            .arg("_", format!("*mut {original_name}"))
+            .ret("std::os::raw::c_int")
+            .gen(self);
+
+        for field in ty.record.fields.iter() {
+            let t = self.typemap.get(&field.r#type);
+            let t = match t {
+                Some(t) => t,
+                None => &field.r#type,
+            };
+
+            let _project = ExternFn::new(format!("futhark_project_opaque_{name}_{}", field.name))
+                .arg("_", "*mut futhark_context")
+                .arg("_", format!("*mut {}", t))
+                .arg("_", format!("*const {original_name}"))
+                .ret("std::os::raw::c_int")
+                .gen(self);
+        }
+
+        self.scope
+            .new_struct(&rust_name)
+            .vis("pub")
+            .generic("'a")
+            .field("data", &format!("*mut {original_name}"))
+            .field("ctx", "*mut futhark_context")
+            .field("_t", "std::marker::PhantomData<&'a ()>");
+
+        self.scope
+            .new_impl(&rust_name)
+            .generic("'a")
+            .target_generic("'a")
+            .impl_trait("Drop")
+            .new_fn("drop")
+            .arg_mut_self()
+            .line("unsafe {")
+            .line(&format!(
+                "    futhark_free_opaque_{name}(self.ctx, self.data);",
+            ))
+            .line("}");
+
+        let opaque = self
+            .scope
+            .new_impl(&rust_name)
+            .generic("'a")
+            .target_generic("'a");
+
+        let _opaque_from_raw = opaque
+            .new_fn("from_raw")
+            .allow("unused")
+            .arg("ctx", "*mut futhark_context")
+            .arg("data", &format!("*mut {original_name}"))
+            .ret("Self")
+            .line("Self { ctx, data, _t: std::marker::PhantomData }");
+
+        let new_fn = opaque
+            .new_fn("new")
+            .vis("pub")
+            .arg("ctx", "&'a Context")
+            .ret("Result<Self, Error>");
+
+        let mut args = vec![];
+        for field in ty.record.fields.iter() {
+            let t = self.typemap.get(&field.r#type);
+            let a = match t {
+                Some(t) => t,
+                None => &field.r#type,
+            };
+
+            let x = self.typemap.get(a);
+            let t = match x {
+                Some(t) => t,
+                None => a,
+            };
+
+            let u = if t == &field.r#type {
+                format!("{t}")
+            } else {
+                format!("&{t}")
+            };
+
+            if a.contains("opaque") {
+                args.push(format!("field{}.data", field.name));
+            } else if t.contains("Array") {
+                args.push(format!("field{}.ptr", field.name));
+            } else {
+                args.push(format!("field{}", field.name));
+            }
+
+            new_fn.arg(&format!("field{}", field.name), &u);
+        }
+
+        new_fn
+            .line("let mut out: *mut _ = std::ptr::null_mut();")
+            .line(format!(
+                "let rc = unsafe {} futhark_new_opaque_{name}(ctx.context, &mut out, {}) {};",
+                '{',
+                args.join(", "),
+                '}'
+            ))
+            .line("if rc != 0 { return Err(Error::Code(rc)); }")
+            .line("Ok(Self {data: out, ctx: ctx.context, _t: std::marker::PhantomData})");
+
+        for field in ty.record.fields.iter() {
+            let a = self.typemap.get(&field.r#type);
+            let a = match a {
+                Some(t) => t,
+                None => &field.r#type,
+            };
+
+            let x = self.typemap.get(a);
+            let t = match x {
+                Some(t) => t,
+                None => a,
+            };
+
+            let func = opaque
+                .new_fn(&format!("get_{}", field.name))
+                .vis("pub")
+                .arg_ref_self()
+                .ret(&format!("Result<{t}, Error>"));
+
+            func
+                .line("let mut out = std::mem::MaybeUninit::zeroed();")
+                .line(&format!("let rc = unsafe {} futhark_project_opaque_{name}_{}(self.ctx, out.as_mut_ptr(), self.data) {};", '{', field.name, '}'))
+                .line("if rc != 0 { return Err(Error::Code(rc)); }")
+                .line("let out = unsafe { out.assume_init() };");
+
+            if a.contains("opaque") {
+                func.line(&format!("Ok({t}::from_raw(self.ctx, out))"));
+            } else if t.contains("Array") {
+                func.line(&format!("Ok({t}::from_raw(self.ctx, out))"));
+            } else {
+                func.line("Ok(out)");
+            }
+        }
+
+        Ok(rust_name)
+    }
+
     fn generate_entry_function(
         &mut self,
         name: &str,
@@ -247,47 +445,52 @@ impl Rust {
         let mut call_args = Vec::new();
 
         for (i, arg) in entry.outputs.iter().enumerate() {
-            let t = self.typemap.get(&arg.r#type);
-            let t = match t {
+            let a = self.typemap.get(&arg.r#type);
+            let a = match a {
                 Some(t) => t,
                 None => &arg.r#type,
             };
 
             let name = format!("out{i}");
-            c = c.arg(&name, t);
+            c = c.arg(&name, format!("*mut {a}"));
 
-            let x = self.typemap.get(t);
+            let x = self.typemap.get(a);
             let t = match x {
                 Some(t) => t,
-                None => t,
+                None => a,
             };
 
             func.arg(&name, &format!("&mut {t}"));
             if t.contains("Array") {
                 call_args.push(format!("{name}.ptr as *mut _"))
+            } else if a.contains("opaque") {
+                call_args.push(format!("{name}.data as *mut _"));
             } else {
                 call_args.push(format!("{name} as *mut _"));
             }
         }
 
         for (i, arg) in entry.inputs.iter().enumerate() {
-            let t = self.typemap.get(&arg.r#type);
-            let t = match t {
+            let a = self.typemap.get(&arg.r#type);
+            let a = match a {
                 Some(t) => t,
                 None => &arg.r#type,
             };
             let name = format!("input{i}");
-            c = c.arg(&name, t.replace("*mut", "*const"));
+            c = c.arg(&name, a.replace("*mut", "*const"));
 
-            let x = self.typemap.get(t);
+            let x = self.typemap.get(a);
             let t = match x {
                 Some(t) => t,
-                None => t,
+                None => a,
             };
 
             if t.contains("Array") {
                 func.arg(&name, &format!("&{t}"));
                 call_args.push(format!("{name}.ptr as *mut _"));
+            } else if a.contains("opaque") {
+                func.arg(&name, &format!("&{t}"));
+                call_args.push(format!("{name}.data as *mut _"));
             } else {
                 func.arg(&name, t);
                 call_args.push(name);
@@ -311,9 +514,10 @@ impl Rust {
 
 impl Generate for Rust {
     fn generate(&mut self, library: &Library, config: &mut Config) -> Result<(), Error> {
-        write!(config.output_file, "// Generated by futhark-bindgen")?;
+        writeln!(config.output_file, "// Generated by futhark-bindgen\n")?;
         self.scope
             .new_struct("futhark_context_config")
+            .allow("non_camel_case_types")
             .repr("C")
             .field("_private", "[u8; 0]");
 
@@ -347,6 +551,7 @@ impl Generate for Rust {
 
         self.scope
             .new_struct("futhark_context")
+            .allow("non_camel_case_types")
             .repr("C")
             .field("_private", "[u8; 0]");
 
@@ -408,21 +613,27 @@ impl Generate for Rust {
 
         // Options
         let opts = self.scope.new_impl("Options");
-        opts.new_fn("new").ret("Options").line("Options::default()");
+        opts.new_fn("new")
+            .vis("pub")
+            .ret("Options")
+            .line("Options::default()");
         opts.new_fn("debug")
+            .vis("pub")
             .ret("Options")
             .arg_self()
-            .line("self.debug = true; self");
+            .line("let mut x = self; x.debug = true; x");
         opts.new_fn("profile")
+            .vis("pub")
             .ret("Options")
             .arg_self()
-            .line("self.profile = true; self");
+            .line("let mut x = self; x.profile = true; x");
         opts.new_fn("log")
+            .vis("pub")
             .ret("Options")
             .arg_self()
-            .line("self.logging = true; self");
-        opts.new_fn("cache_file").ret("Options").arg_self().line(
-            "self.cache_file = Some(std::ffi::CString::new(x).expect(\"Invalid cache file\")); self",
+            .line("let mut x = self; x.logging = true; x");
+        opts.new_fn("cache_file").vis("pub").ret("Options").arg_self().arg("a", "impl AsRef<str>").line(
+            "let mut x = self; x.cache_file = Some(std::ffi::CString::new(a.as_ref()).expect(\"Invalid cache file\")); x",
         );
 
         // Context
@@ -431,7 +642,7 @@ impl Generate for Rust {
             .doc("Wrapper around futhark_context")
             .field("config", "*mut futhark_context_config")
             .field("context", "*mut futhark_context")
-            .field("cache_file", "Option<std::ffi::CString>")
+            .field("_cache_file", "Option<std::ffi::CString>")
             .vis("pub");
 
         let ctx = self.scope.new_impl("Context");
@@ -444,10 +655,10 @@ impl Generate for Rust {
             .line("if config.is_null() { return Err(Error::NullPtr) }")
             .line("let context = unsafe { futhark_context_new(config) };")
             .line("if context.is_null() { return Err(Error::NullPtr) }")
-            .line("Ok(Context { config, context, cache_file: None })");
+            .line("Ok(Context { config, context, _cache_file: None })");
 
         let _ctx_new_with_options = ctx
-            .new_fn("new")
+            .new_fn("new_with_options")
             .vis("pub")
             .doc("Create a new context with options")
             .ret("Result<Self, Error>")
@@ -460,7 +671,7 @@ impl Generate for Rust {
             .line("if let Some(c) = &options.cache_file { unsafe { futhark_context_config_set_cache_file(config, c.as_ptr()); } }")
             .line("let context = unsafe { futhark_context_new(config) };")
             .line("if context.is_null() { return Err(Error::NullPtr) }")
-            .line("Ok(Context { config, context, cache_file: options.cache_file })");
+            .line("Ok(Context { config, context, _cache_file: options.cache_file })");
 
         let _ctx_sync = ctx
             .new_fn("sync")
@@ -478,7 +689,7 @@ impl Generate for Rust {
             .doc("Clear internal caches")
             .ret("Result<(), Error>")
             .arg_ref_self()
-            .line("let rc = unsafe { futhark_context_free_caches(self.context) };")
+            .line("let rc = unsafe { futhark_context_clear_caches(self.context) };")
             .line("if rc != 0 { return Err(Error::Code(rc)) }")
             .line("Ok(())");
 
@@ -486,7 +697,6 @@ impl Generate for Rust {
             .new_fn("pause_profiling")
             .vis("pub")
             .doc("Pause profiling")
-            .ret("Result<(), Error>")
             .arg_ref_self()
             .line("unsafe { futhark_context_pause_profiling(self.context); }");
 
@@ -494,7 +704,6 @@ impl Generate for Rust {
             .new_fn("unpause_profiling")
             .vis("pub")
             .doc("Unpause profiling")
-            .ret("Result<(), Error>")
             .arg_ref_self()
             .line("unsafe { futhark_context_unpause_profiling(self.context); }");
 
@@ -506,8 +715,8 @@ impl Generate for Rust {
             .arg_ref_self()
             .line("let s = unsafe { futhark_context_get_error(self.context) };")
             .line("if s.is_null() { return None; }")
-            .line("let r = unsafe { std::ffi::CStr::from_ptr(s).to_string_lossy().to_owned() };")
-            .line("unsafe { free(s) };")
+            .line("let r = unsafe { std::ffi::CStr::from_ptr(s).to_string_lossy().to_string() };")
+            .line("unsafe { free(s as *mut _) };")
             .line("Some(r)");
 
         let _ctx_report = ctx
@@ -518,8 +727,8 @@ impl Generate for Rust {
             .arg_ref_self()
             .line("let s = unsafe { futhark_context_report(self.context) };")
             .line("if s.is_null() { return None; }")
-            .line("let r = unsafe { std::ffi::CStr::from_ptr(s).to_string_lossy().to_owned() };")
-            .line("unsafe { free(s) };")
+            .line("let r = unsafe { std::ffi::CStr::from_ptr(s).to_string_lossy().to_string() };")
+            .line("unsafe { free(s as *mut _) };")
             .line("Some(r)");
 
         let _ctx_drop = self
@@ -540,7 +749,13 @@ impl Generate for Rust {
                     self.typemap.insert(name.clone(), info.ptr.clone());
                     self.typemap.insert(info.ptr, info.rust_name);
                 }
-                _ => (), // TODO
+                manifest::Type::Opaque(ty) => {
+                    let rust_type = self.generate_opaque_type(name, ty)?;
+                    self.typemap
+                        .insert(name.clone(), format!("*mut futhark_opaque_{name}"));
+                    self.typemap
+                        .insert(format!("*mut futhark_opaque_{name}"), rust_type);
+                }
             }
         }
 

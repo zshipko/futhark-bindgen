@@ -1,6 +1,7 @@
 use std::io::Write;
 
-pub use crate::*;
+use crate::generate::first_uppercase;
+use crate::*;
 
 pub struct OCaml {
     typemap: BTreeMap<String, String>,
@@ -78,22 +79,6 @@ impl OCaml {
             args.join(" @-> ")
         )
     }
-}
-
-fn first_uppercase(s: &str) -> String {
-    let mut s = s.to_string();
-    if let Some(r) = s.get_mut(0..1) {
-        r.make_ascii_uppercase();
-    }
-    s
-}
-
-fn first_lowercase(s: &str) -> String {
-    let mut s = s.to_string();
-    if let Some(r) = s.get_mut(0..1) {
-        r.make_ascii_uppercase();
-    }
-    s
 }
 
 impl Generate for OCaml {

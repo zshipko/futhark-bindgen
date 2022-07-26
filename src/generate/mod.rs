@@ -6,6 +6,22 @@ mod rust;
 pub use ocaml::OCaml;
 pub use rust::Rust;
 
+pub(crate) fn first_uppercase(s: &str) -> String {
+    let mut s = s.to_string();
+    if let Some(r) = s.get_mut(0..1) {
+        r.make_ascii_uppercase();
+    }
+    s
+}
+
+/*pub(crate) fn first_lowercase(s: &str) -> String {
+    let mut s = s.to_string();
+    if let Some(r) = s.get_mut(0..1) {
+        r.make_ascii_uppercase();
+    }
+    s
+}*/
+
 pub struct Config {
     pub output_path: std::path::PathBuf,
     pub output_file: std::fs::File,

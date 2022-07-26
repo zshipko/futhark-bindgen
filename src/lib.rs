@@ -1,7 +1,7 @@
 pub(crate) use std::collections::BTreeMap;
 
 mod error;
-mod generate;
+pub(crate) mod generate;
 pub mod manifest;
 
 pub use error::Error;
@@ -70,6 +70,7 @@ impl Library {
     #[cfg(feature = "build")]
     pub fn link(&self) {
         cc::Build::new()
+            .flag("-Wno-unused-parameter")
             .file(&self.c_file)
             .compile("futhark_generate");
         println!("cargo:rustc-link-lib=futhark_generate");
