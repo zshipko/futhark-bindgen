@@ -271,11 +271,11 @@ impl Generate for OCaml {
             for out in &entry.outputs {
                 let t = self.get_ctype(&out.r#type);
 
-                if type_is_array(&t) || type_is_opaque(&t) {
+                /*if type_is_array(&t) || type_is_opaque(&t) {
                     args.push(t);
-                } else {
-                    args.push(format!("ptr {t}"));
-                }
+                } else {*/
+                args.push(format!("ptr {t}"));
+                //}
             }
 
             for input in &entry.inputs {
@@ -289,11 +289,11 @@ impl Generate for OCaml {
 
         ml!("end");
 
-        let error_t = "type error = InvalidShape | NullPtr | Code of int\nexception Error of error";
+        let error_t = "type error = InvalidShape of int * int | NullPtr | Code of int\nexception Error of error";
         ml!(
             "{}", error_t;
             "let () = Printexc.register_printer (function \
-            | Error InvalidShape -> Some \"futhark error: invalid shape\" \
+            | Error (InvalidShape (a, b)) -> Some (Printf.sprintf \"futhark error: invalid shape, expected %d but got %d\" a b) \
             | Error NullPtr -> Some \"futhark error: null pointer\" \
             | Error (Code c) -> Some (Printf.sprintf \"futhark error: code %d\" c) | _ -> None)"
         );
@@ -356,10 +356,10 @@ impl Generate for OCaml {
             "end");
 
         ml!(
-            "type futhark_array = {} ptr: unit ptr; shape: int array; ctx: Context.t {}",
+            "type futhark_array = {} mutable ptr: unit ptr; shape: int array; ctx: Context.t {}",
             '{',
             '}';
-             "type opaque = {} opaque_ptr: unit ptr; opaque_ctx: Context.t {}",
+             "type opaque = {} mutable opaque_ptr: unit ptr; opaque_ctx: Context.t {}",
             '{',
             '}';
         );
@@ -402,6 +402,7 @@ impl Generate for OCaml {
                     for i in 0..rank {
                         ml_no_newline!(" (Int64.of_int dims.({i}))");
                     }
+
                     ml!(
                         " in";
                         "    if is_null ptr then raise (Error NullPtr);";
@@ -410,7 +411,9 @@ impl Generate for OCaml {
                         "";
                         "  let values t ba =";
                         "    let dims = Genarray.dims ba in";
-                        "    if not (Array.fold_left ( * ) 1 t.shape <> Array.fold_left ( * ) 1 dims) then raise (Error (InvalidShape));";
+                        "    let a = Array.fold_left ( * ) 1 t.shape in";
+                        "    let b = Array.fold_left ( * ) 1 dims in";
+                        "    if (a <> b) then raise (Error (InvalidShape (a, b)));";
                         "    let rc = Bindings.futhark_values_{elemtype}_{rank}d t.ctx.Context.handle t.ptr (bigarray_start genarray ba) in";
                         "    if rc <> 0 then raise (Error (Code rc))";
                         "";
@@ -579,11 +582,7 @@ impl Generate for OCaml {
                 mli_no_newline!(" -> {}", ocaml_elemtype); // mli
             }
             mli!(" -> unit"); // mli
-
-            ml_no_newline!(
-                " =";
-                "    let rc = Bindings.futhark_entry_{name} ctx.Context.handle";
-            );
+            ml!(" =");
 
             for (i, out) in entry.outputs.iter().enumerate() {
                 let t = self.get_type(&out.r#type);
@@ -593,13 +592,27 @@ impl Generate for OCaml {
                 } else {
                     format!("{i}")
                 };
+
                 if type_is_array(&t) {
-                    ml_no_newline!(" out{i}.ptr");
+                    ml!("    let out{i}_ptr = allocate (ptr void) out{i}.ptr in");
                 } else if type_is_opaque(&t) {
-                    ml_no_newline!(" input{i}.opaque_ptr");
+                    ml!("    let out{i}_ptr = allocate (ptr void) input{i}.opaque_ptr) in");
                 } else {
-                    ml_no_newline!(" out{i}");
+                    ml!("    let out{i}_ptr = out{i} in");
                 }
+            }
+
+            ml_no_newline!(
+                "    let rc = Bindings.futhark_entry_{name} ctx.Context.handle";
+            );
+
+            for (i, _out) in entry.outputs.iter().enumerate() {
+                let i = if entry.outputs.len() == 1 {
+                    String::new()
+                } else {
+                    format!("{i}")
+                };
+                ml_no_newline!(" out{i}_ptr");
             }
 
             for (i, input) in entry.inputs.iter().enumerate() {
@@ -614,8 +627,26 @@ impl Generate for OCaml {
             }
             ml!(
                 " in";
-                "    if rc <> 0 then raise (Error (Code rc))"
+                "    if rc <> 0 then raise (Error (Code rc));"
             );
+
+            for (i, out) in entry.outputs.iter().enumerate() {
+                let t = self.get_type(&out.r#type);
+
+                let i = if entry.outputs.len() == 1 {
+                    String::new()
+                } else {
+                    format!("{i}")
+                };
+
+                if type_is_array(&t) {
+                    ml!("    let () = out{i}.ptr <- !@out{i}_ptr in");
+                } else if type_is_opaque(&t) {
+                    ml!("    let () = out{i}.opaque_ptr <- !@out{i}_ptr in");
+                } else {
+                }
+            }
+            ml!("()");
         }
         ml!("end");
         mli!("end");

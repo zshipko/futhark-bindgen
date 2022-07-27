@@ -462,9 +462,9 @@ impl Rust {
             let t = Self::get_type(&self.typemap, &a);
             func.arg(&name, &format!("&mut {t}"));
             if type_is_array(&t) {
-                call_args.push(format!("{name}.ptr as *mut _"))
+                call_args.push(format!("&mut {name}.ptr as *mut _"))
             } else if type_is_opaque(&a) {
-                call_args.push(format!("{name}.data as *mut _"));
+                call_args.push(format!("&mut {name}.data as *mut _"));
             } else {
                 call_args.push(format!("{name} as *mut _"));
             }
