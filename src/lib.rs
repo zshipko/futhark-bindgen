@@ -69,11 +69,15 @@ pub struct Library {
 impl Library {
     #[cfg(feature = "build")]
     pub fn link(&self) {
+        let project = std::env::var("CARGO_PKG_NAME").unwrap();
+
+        let name = format!("futhark_generate_{project}");
+
         cc::Build::new()
             .flag("-Wno-unused-parameter")
             .file(&self.c_file)
-            .compile("futhark_generate");
-        println!("cargo:rustc-link-lib=futhark_generate");
+            .compile(&name);
+        println!("cargo:rustc-link-lib={name}");
 
         let libs = self.manifest.backend.required_c_libs();
 
@@ -89,7 +93,10 @@ pub fn build(
     src: impl AsRef<std::path::Path>,
     dest: impl AsRef<std::path::Path>,
 ) {
+    let d = dest.as_ref().with_extension("");
+    let out = std::path::PathBuf::from(std::env::var("OUT_DIR").unwrap()).join(d);
     let lib = Compiler::new(backend, src)
+        .with_extra_args(vec!["-o".to_string(), out.to_string_lossy().to_string()])
         .compile()
         .expect("Compilation failed")
         .expect("Unable to find manifest file");
@@ -98,6 +105,16 @@ pub fn build(
     gen.generate(&lib, &mut config)
         .expect("Code generation failed");
     lib.link();
+}
+
+#[cfg(feature = "build")]
+pub fn build_in_out_dir(
+    backend: Backend,
+    src: impl AsRef<std::path::Path>,
+    dest: impl AsRef<std::path::Path>,
+) {
+    let dest = std::path::PathBuf::from(std::env::var("OUT_DIR").unwrap()).join(dest);
+    build(backend, src, dest)
 }
 
 impl Compiler {
@@ -110,12 +127,14 @@ impl Compiler {
         }
     }
 
-    pub fn set_executable_name(&mut self, name: impl AsRef<str>) {
+    pub fn with_executable_name(mut self, name: impl AsRef<str>) -> Self {
         self.exe = name.as_ref().into();
+        self
     }
 
-    pub fn set_extra_args(&mut self, args: Vec<String>) {
+    pub fn with_extra_args(mut self, args: Vec<String>) -> Self {
         self.extra_args = args;
+        self
     }
 
     pub fn compile(&self) -> Result<Option<Library>, Error> {
