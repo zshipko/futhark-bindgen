@@ -6,7 +6,6 @@ let () =
   let number = Number.v ctx 2.5 in
   let out = Entry.test ctx number in 
   assert (out = 5.0);
-
   let init = [| 1.0; 2.0; 3.0 |] in  
   let ba = Array1.of_array Float32 C_layout init |> genarray_of_array1 in
   let arr = Array_f32_1d.v ctx ba in
@@ -17,4 +16,7 @@ let () =
   Array.iter (Printf.printf "%f\n") test;
   Array.iter (Printf.printf "%f\n") init;
   assert (Array.for_all2 (fun a b -> Float.equal a (b *. 2.5)) test init);
-  Gc.full_major()
+  Array_f32_1d.free arr;
+  Array_f32_1d.free out;
+  Tup.free tup
+

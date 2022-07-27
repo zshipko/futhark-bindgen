@@ -74,11 +74,19 @@ fn main() -> Result<(), Error> {
 
     match args.command {
         Commands::Run(args) => {
-            let mut compiler = Compiler::new(args.backend, &args.input);
+            let out_dir = args
+                .output
+                .parent()
+                .unwrap()
+                .canonicalize()
+                .unwrap()
+                .to_path_buf();
+            let mut compiler = Compiler::new(args.backend, &args.input)
+                .with_extra_args(args.futhark_args)
+                .with_output_dir(out_dir);
             if let Some(exe) = args.compiler {
-                compiler.set_executable_name(exe);
+                compiler = compiler.with_executable_name(exe);
             }
-            compiler.set_extra_args(args.futhark_args);
             let lib = match compiler.compile()? {
                 Some(l) => l,
                 None => {

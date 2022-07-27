@@ -761,10 +761,7 @@ impl Generate for Rust {
             .doc("Sync context")
             .vis("pub")
             .arg_ref_self()
-            .ret("Result<(), Error>")
-            .line("let rc = unsafe { futhark_context_sync(self.context) };")
-            .line("if rc != 0 { return Err(Error::Code(rc)) }")
-            .line("Ok(())");
+            .line("unsafe { futhark_context_sync(self.context) };");
 
         let _ctx_clear_caches = ctx
             .new_fn("clear_caches")

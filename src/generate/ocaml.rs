@@ -359,7 +359,7 @@ impl Generate for OCaml {
             "    Option.iter (Bindings.futhark_context_config_set_cache_file config) cache_file;";
             "    let handle = Bindings.futhark_context_new config in";
             "    if is_null handle then (ignore @@ Bindings.futhark_context_config_free config; raise (Error NullPtr));";
-            "    let t = {} handle; config; cache_file {} in", '{', '}';
+            "    let t = {} handle; config; cache_file; {} in", '{', '}';
             "    Gc.finalise free t; t";
             "";
             "  let sync t = let rc = Bindings.futhark_context_sync t.handle in if rc <> 0 then raise (Error (Code rc))";
@@ -388,6 +388,7 @@ impl Generate for OCaml {
             "  type t";
             "  val v: ?debug:bool -> ?log:bool -> ?profile:bool -> ?cache_file:string -> {extra_mli} unit -> t";
             "  val sync: t -> unit";
+            "  val free: t -> unit";
             "  val clear_caches: t -> unit";
             "  val get_error: t -> string option";
             "  val report: t -> string option";
@@ -396,10 +397,10 @@ impl Generate for OCaml {
             "end");
 
         ml!(
-            "type futhark_array = {} ptr: unit ptr; shape: int array; ctx: Context.t {}",
+            "type futhark_array = {}  ptr: unit ptr; shape: int array; ctx: Context.t {}",
             '{',
             '}';
-             "type opaque = {} opaque_ptr: unit ptr; opaque_ctx: Context.t {}",
+             "type opaque = {}  opaque_ptr: unit ptr; opaque_ctx: Context.t {}",
             '{',
             '}';
         );
@@ -420,6 +421,8 @@ impl Generate for OCaml {
                     ml!(
                         "  let v ctx ba =";
                         "    let dims = Genarray.dims ba in";
+                    );
+                    ml_no_newline!(
                         "    let ptr = Bindings.futhark_new_{elemtype}_{rank}d ctx.Context.handle (bigarray_start genarray ba)";
                     );
 
@@ -430,7 +433,7 @@ impl Generate for OCaml {
                     ml!(
                         " in";
                         "    if is_null ptr then raise (Error NullPtr);";
-                        "    let t = {} ptr; ctx; shape = dims {} in", '{', '}';
+                        "    let t = {} ptr; ctx; shape = dims; {} in", '{', '}';
                         "    Gc.finalise free t; t";
                         "";
                         "  let values t ba =";
@@ -467,6 +470,7 @@ impl Generate for OCaml {
                         "  val shape: t -> int array";
                         "  val v: Context.t -> ({ocaml_elemtype}, {ba_elemtype}, Bigarray.c_layout) Bigarray.Genarray.t -> t";
                         "  val values: t -> ({ocaml_elemtype}, {ba_elemtype}, Bigarray.c_layout) Bigarray.Genarray.t -> unit";
+                        "  val free: t -> unit";
                         "end"
                     );
                 }
@@ -554,15 +558,12 @@ impl Generate for OCaml {
 
                         if type_is_opaque(&t) {
                             ml!(
-                                "    let t = {} opaque_ptr = !@out; opaque_ctx = t.opaque_ctx {} in", '{', '}';
-                                "    Gc.finalise free t; t";
+                                "    of_raw t.opaque_ctx !@out";
                             );
                         } else if type_is_array(&t) {
                             let array = first_uppercase(&t);
                             ml!(
-                                "    let shape = {array}.raw_shape t.opaque_ctx.Context.handle !@out in";
-                                "    let t = {} ptr = !@out; ctx = t.opaque_ctx; shape {} in", '{', '}';
-                                "    Gc.finalise {array}.free t; t"
+                                "    {array}.of_raw t.opaque_ctx !@out";
                             );
                         } else {
                             ml!("    !@out");
@@ -574,6 +575,7 @@ impl Generate for OCaml {
                             mli!("  val get_{name}: t -> {t}");
                         }
                     }
+                    mli!("val free: t -> unit");
 
                     ml!("end");
                     mli!("end");

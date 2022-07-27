@@ -56,6 +56,7 @@ pub struct Compiler {
     backend: Backend,
     src: std::path::PathBuf,
     extra_args: Vec<String>,
+    output_dir: std::path::PathBuf,
 }
 
 #[derive(Debug, Clone)]
@@ -93,14 +94,16 @@ pub fn build(
     src: impl AsRef<std::path::Path>,
     dest: impl AsRef<std::path::Path>,
 ) {
-    let d = dest.as_ref().with_extension("");
-    let out = std::path::PathBuf::from(std::env::var("OUT_DIR").unwrap()).join(d);
+    let out = std::path::PathBuf::from(std::env::var("OUT_DIR").unwrap());
+    println!("{:?}", out);
     let lib = Compiler::new(backend, src)
-        .with_extra_args(vec!["-o".to_string(), out.to_string_lossy().to_string()])
+        .with_output_dir(out)
         .compile()
         .expect("Compilation failed")
         .expect("Unable to find manifest file");
-    let mut config = Config::new(dest).expect("Unable to configure codegen");
+
+    let out = std::path::PathBuf::from(std::env::var("OUT_DIR").unwrap()).join(dest);
+    let mut config = Config::new(out).expect("Unable to configure codegen");
     let mut gen = config.detect().expect("Invalid output language");
     gen.generate(&lib, &mut config)
         .expect("Code generation failed");
@@ -123,6 +126,13 @@ impl Compiler {
             exe: String::from("futhark"),
             src: src.as_ref().to_path_buf(),
             extra_args: Vec::new(),
+            output_dir: src
+                .as_ref()
+                .canonicalize()
+                .unwrap()
+                .parent()
+                .unwrap()
+                .to_path_buf(),
             backend,
         }
     }
@@ -137,10 +147,19 @@ impl Compiler {
         self
     }
 
+    pub fn with_output_dir(mut self, dir: impl AsRef<std::path::Path>) -> Self {
+        self.output_dir = dir.as_ref().to_path_buf();
+        self
+    }
+
     pub fn compile(&self) -> Result<Option<Library>, Error> {
+        let output = &self
+            .output_dir
+            .join(self.src.with_extension("").file_name().unwrap());
         let ok = std::process::Command::new(&self.exe)
             .arg(self.backend.to_str())
             .args(&self.extra_args)
+            .args(&["-o", &output.to_string_lossy()])
             .arg("--lib")
             .arg(&self.src)
             .status()?
@@ -155,9 +174,9 @@ impl Compiler {
             _ => (),
         }
 
-        let manifest = Manifest::parse_file(self.src.with_extension("json"))?;
-        let c_file = self.src.with_extension("c");
-        let h_file = self.src.with_extension("h");
+        let manifest = Manifest::parse_file(output.with_extension("json"))?;
+        let c_file = output.with_extension("c");
+        let h_file = output.with_extension("h");
         Ok(Some(Library {
             manifest,
             c_file,

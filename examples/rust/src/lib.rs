@@ -14,7 +14,7 @@ mod tests {
         let arr = ArrayF32D1::new(&ctx, [3], init).unwrap();
         let tup = Tup::new(&ctx, &number, &arr).unwrap();
         let out = ctx.tup_mul(&tup).unwrap();
-        ctx.sync().unwrap();
+        ctx.sync();
 
         let values = &mut [0.0, 0.0, 0.0];
         out.values(values).unwrap();
