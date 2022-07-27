@@ -128,27 +128,10 @@ impl Rust {
             let dim = format!("dims[{i}]");
             dim_params.push(dim);
         }
+
+        // Array::new
         let _array_new = array_impl
             .new_fn("new")
-            .vis("pub")
-            .doc("Create a new, empty array")
-            .arg("ctx", "&'a Context")
-            .arg("dims", &format!("[i64; {}]", a.rank))
-            .ret("Result<Self, Error>")
-            .line(&format!("let data = vec![0 as {elemtype}; dims.iter().fold(1, |a, b| a * *b as usize)];"))
-            .line("let ptr = unsafe {")
-            .line(&format!(
-                "    {}(ctx.context, data.as_ptr(), {})",
-                &new_fn,
-                dim_params.join(", ")
-            ))
-            .line("};")
-            .line("if ptr.is_null() { return Err(Error::NullPtr); }")
-            .line("Ok(Self { ptr: ptr as *mut _, shape: dims, ctx: ctx.context, _t: std::marker::PhantomData })");
-
-        // Array::from_slice
-        let _array_from_slice = array_impl
-            .new_fn("from_slice")
             .vis("pub")
             .doc("Create a new array from an existing slice")
             .arg("ctx", "&'a Context")
@@ -447,10 +430,11 @@ impl Rust {
             .new_fn(name)
             .doc(&format!("Entry point: {name}"))
             .vis("pub")
-            .ret("Result<(), Error>")
             .arg_ref_self();
 
         let mut call_args = Vec::new();
+
+        let mut ret = Vec::new();
 
         // Output arguments
         for (i, arg) in entry.outputs.iter().enumerate() {
@@ -460,14 +444,24 @@ impl Rust {
             c = c.arg(&name, format!("*mut {a}"));
 
             let t = Self::get_type(&self.typemap, &a);
-            func.arg(&name, &format!("&mut {t}"));
-            if type_is_array(&t) {
+            func.line(&format!(
+                "let mut {name} = std::mem::MaybeUninit::zeroed();"
+            ));
+            call_args.push(format!("{name}.as_mut_ptr()"));
+            ret.push(t);
+            /*if type_is_array(&t) {
                 call_args.push(format!("&mut {name}.ptr as *mut _"))
             } else if type_is_opaque(&a) {
                 call_args.push(format!("&mut {name}.data as *mut _"));
             } else {
                 call_args.push(format!("{name} as *mut _"));
-            }
+            }*/
+        }
+
+        if entry.outputs.len() <= 1 {
+            func.ret(&format!("Result<{}, Error>", ret.join(", ")));
+        } else {
+            func.ret(&format!("Result<({}), Error>", ret.join(", ")));
         }
 
         // Input arguments
@@ -497,8 +491,45 @@ impl Rust {
                 call_args.join(", ")
             ))
             .line("};")
-            .line("if rc != 0 { return Err(Error::Code(rc)) }")
-            .line("Ok(())");
+            .line("if rc != 0 { return Err(Error::Code(rc)) }");
+
+        if entry.outputs.len() <= 1 {
+            func.line("Ok(");
+        } else {
+            func.line("Ok((");
+        }
+
+        for (i, arg) in entry.outputs.iter().enumerate() {
+            let a = Self::get_type(&self.typemap, &arg.r#type);
+
+            let name = format!("out{i}");
+
+            let t = Self::get_type(&self.typemap, &a);
+
+            if type_is_array(&t) {
+                func.line(&format!(
+                    "unsafe {} {t}::from_raw(self.context, {name}.assume_init()) {}",
+                    '{', '}'
+                ));
+            } else if type_is_opaque(&a) {
+                func.line(&format!(
+                    "unsafe {} {t}::from_raw(self.context, {name}.assume_init()) {}",
+                    '{', '}'
+                ));
+            } else {
+                func.line(&format!("unsafe {} {name}.assume_init() {}", '{', '}'));
+            }
+
+            if i != entry.outputs.len() - 1 {
+                func.line(",");
+            }
+        }
+
+        if entry.outputs.len() <= 1 {
+            func.line(")");
+        } else {
+            func.line("))");
+        }
 
         c.gen(self);
         Ok(())

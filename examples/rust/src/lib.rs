@@ -5,17 +5,15 @@ mod tests {
     use crate::*;
     #[test]
     fn it_works() {
-        let ctx = Context::new().unwrap();
-        let mut dest = 0.0;
+        let ctx = Context::new_with_options(Options::new().debug().log().profile()).unwrap();
         let number = Number::new(&ctx, 2.0).unwrap();
-        ctx.test(&mut dest, &number).unwrap();
+        let dest = ctx.test(&number).unwrap();
         assert_eq!(dest, 4.0);
 
         let init = &[1.0, 2.0, 3.0];
-        let arr = ArrayF32D1::from_slice(&ctx, [3], init).unwrap();
+        let arr = ArrayF32D1::new(&ctx, [3], init).unwrap();
         let tup = Tup::new(&ctx, &number, &arr).unwrap();
-        let mut out = ArrayF32D1::new(&ctx, [3]).unwrap();
-        ctx.tup_mul(&mut out, &tup).unwrap();
+        let out = ctx.tup_mul(&tup).unwrap();
         ctx.sync().unwrap();
 
         let values = &mut [0.0, 0.0, 0.0];

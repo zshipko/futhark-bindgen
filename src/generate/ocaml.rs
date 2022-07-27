@@ -356,10 +356,10 @@ impl Generate for OCaml {
             "end");
 
         ml!(
-            "type futhark_array = {} mutable ptr: unit ptr; shape: int array; ctx: Context.t {}",
+            "type futhark_array = {} ptr: unit ptr; shape: int array; ctx: Context.t {}",
             '{',
             '}';
-             "type opaque = {} mutable opaque_ptr: unit ptr; opaque_ctx: Context.t {}",
+             "type opaque = {} opaque_ptr: unit ptr; opaque_ctx: Context.t {}",
             '{',
             '}';
         );
@@ -369,7 +369,6 @@ impl Generate for OCaml {
                 manifest::Type::Array(a) => {
                     let rank = a.rank;
                     let elemtype = a.elemtype.to_str().to_string();
-                    let ctypes_elemtype = self.get_ctype(&elemtype);
                     let ocaml_name = self.typemap.get(name).unwrap();
                     let module_name = first_uppercase(&ocaml_name);
                     ml!(
@@ -377,24 +376,9 @@ impl Generate for OCaml {
                         "  type t = futhark_array";
                         "";
                         "  let free t = ignore (Bindings.futhark_free_{elemtype}_{rank}d t.ctx.Context.handle t.ptr)";
-                        "";
-                        "  let v ctx dims =";
-                        "    let data = CArray.make {ctypes_elemtype} (Array.fold_left ( * ) 1 dims) in"
                     );
-                    ml_no_newline!(
-                        "    let ptr = Bindings.futhark_new_{elemtype}_{rank}d ctx.Context.handle (CArray.start data)"
-                    );
-
-                    for i in 0..rank {
-                        ml_no_newline!(" (Int64.of_int dims.({i}))");
-                    }
                     ml!(
-                        " in";
-                        "    if is_null ptr then raise (Error NullPtr);";
-                        "    let t = {} ptr; ctx; shape = dims {} in", '{', '}';
-                        "    Gc.finalise free t; t";
-                        "";
-                        "  let of_bigarray ctx ba =";
+                        "  let v ctx ba =";
                         "    let dims = Genarray.dims ba in";
                         "    let ptr = Bindings.futhark_new_{elemtype}_{rank}d ctx.Context.handle (bigarray_start genarray ba)";
                     );
@@ -422,7 +406,14 @@ impl Generate for OCaml {
                         "  let raw_shape ctx ptr = ";
                         "    let s = Bindings.futhark_shape_{elemtype}_{rank}d ctx ptr in";
                         "    Array.init {rank} (fun i -> Int64.to_int !@ (s +@ i))";
-                        "  let _ = raw_shape";
+                        "";
+                        "  let of_raw ctx ptr =";
+                        "    if is_null ptr then raise (Error NullPtr);";
+                        "    let shape = raw_shape ctx.Context.handle ptr in";
+                        "    let t = {} ptr; ctx; shape {} in", '{', '}';
+                        "    Gc.finalise free t; t";
+                        "";
+                        "  let _ = of_raw";
                         "end"
                     );
 
@@ -434,8 +425,7 @@ impl Generate for OCaml {
                         "module {module_name}: sig";
                         "  type t";
                         "  val shape: t -> int array";
-                        "  val v: Context.t -> int array -> t";
-                        "  val of_bigarray: Context.t -> ({ocaml_elemtype}, {ba_elemtype}, Bigarray.c_layout) Bigarray.Genarray.t -> t";
+                        "  val v: Context.t -> ({ocaml_elemtype}, {ba_elemtype}, Bigarray.c_layout) Bigarray.Genarray.t -> t";
                         "  val values: t -> ({ocaml_elemtype}, {ba_elemtype}, Bigarray.c_layout) Bigarray.Genarray.t -> unit";
                         "end"
                     );
@@ -495,6 +485,15 @@ impl Generate for OCaml {
                         "    Gc.finalise free t; t";
                     );
 
+                    ml!(
+                        "  let of_raw ctx ptr =";
+                        "    if is_null ptr then raise (Error NullPtr);";
+                        "    let t = {} opaque_ptr = ptr; opaque_ctx = ctx {} in", '{', '}';
+                        "    Gc.finalise free t; t";
+                        "";
+                        "let _ = of_raw";
+                    );
+
                     for f in ty.record.fields.iter() {
                         let t = self.get_type(&f.r#type);
                         let name = &f.name;
@@ -548,27 +547,6 @@ impl Generate for OCaml {
             ml_no_newline!("  let {} ctx", name);
             mli_no_newline!("  val {}: Context.t", name); // mli
 
-            for (i, out) in entry.outputs.iter().enumerate() {
-                let mut ocaml_elemtype = self.get_type(&out.r#type);
-
-                // Transform into `Module.t`
-                if ocaml_elemtype.contains("array_") {
-                    ocaml_elemtype = first_uppercase(&ocaml_elemtype) + ".t"
-                } else {
-                    // Otherwise convert to Ctypes.ptr
-                    ocaml_elemtype += " Ctypes.ptr";
-                }
-
-                let i = if entry.outputs.len() == 1 {
-                    String::new()
-                } else {
-                    format!("{i}")
-                };
-
-                ml_no_newline!(" ~out{i}");
-                mli_no_newline!(" -> out{i}:{ocaml_elemtype}"); // mli
-            }
-
             for (i, input) in entry.inputs.iter().enumerate() {
                 ml_no_newline!(" input{i}");
 
@@ -581,11 +559,29 @@ impl Generate for OCaml {
 
                 mli_no_newline!(" -> {}", ocaml_elemtype); // mli
             }
-            mli!(" -> unit"); // mli
+
+            mli_no_newline!(" -> (");
+
+            for (i, out) in entry.outputs.iter().enumerate() {
+                let mut ocaml_elemtype = self.get_type(&out.r#type);
+
+                // Transform into `Module.t`
+                if ocaml_elemtype.contains("array_") {
+                    ocaml_elemtype = first_uppercase(&ocaml_elemtype) + ".t"
+                }
+
+                if i == entry.outputs.len() - 1 {
+                    mli_no_newline!("{ocaml_elemtype}"); // mli
+                } else {
+                    mli_no_newline!("{ocaml_elemtype},"); // mli
+                }
+            }
+            mli!(")"); // mli
             ml!(" =");
 
             for (i, out) in entry.outputs.iter().enumerate() {
                 let t = self.get_type(&out.r#type);
+                let ct = self.get_ctype(&out.r#type);
 
                 let i = if entry.outputs.len() == 1 {
                     String::new()
@@ -594,11 +590,11 @@ impl Generate for OCaml {
                 };
 
                 if type_is_array(&t) {
-                    ml!("    let out{i}_ptr = allocate (ptr void) out{i}.ptr in");
+                    ml!("    let out{i}_ptr = allocate_n (ptr void) ~count:1 in");
                 } else if type_is_opaque(&t) {
-                    ml!("    let out{i}_ptr = allocate (ptr void) input{i}.opaque_ptr) in");
+                    ml!("    let out{i}_ptr = allocate_n (ptr void) ~count:1) in");
                 } else {
-                    ml!("    let out{i}_ptr = out{i} in");
+                    ml!("    let out{i}_ptr = allocate_n {ct} ~count:1 in");
                 }
             }
 
@@ -630,23 +626,31 @@ impl Generate for OCaml {
                 "    if rc <> 0 then raise (Error (Code rc));"
             );
 
+            ml_no_newline!("(");
             for (i, out) in entry.outputs.iter().enumerate() {
                 let t = self.get_type(&out.r#type);
 
-                let i = if entry.outputs.len() == 1 {
+                let idx = if entry.outputs.len() == 1 {
                     String::new()
                 } else {
                     format!("{i}")
                 };
 
                 if type_is_array(&t) {
-                    ml!("    let () = out{i}.ptr <- !@out{i}_ptr in");
+                    let m = first_uppercase(&t);
+                    ml_no_newline!("({m}.of_raw ctx !@out{idx}_ptr)");
                 } else if type_is_opaque(&t) {
-                    ml!("    let () = out{i}.opaque_ptr <- !@out{i}_ptr in");
+                    let m = first_uppercase(&t);
+                    ml_no_newline!("({m}.of_raw ctx !@out{idx}_ptr)");
                 } else {
+                    ml_no_newline!("!@out{idx}_ptr");
+                }
+
+                if i != entry.outputs.len() - 1 {
+                    ml_no_newline!(", ");
                 }
             }
-            ml!("()");
+            ml!(")");
         }
         ml!("end");
         mli!("end");
