@@ -183,6 +183,17 @@ impl Generate for OCaml {
             "  {}", self.foreign_function("strlen", "size_t", vec!["ptr char"]);
         );
 
+        if matches!(library.manifest.backend, Backend::Multicore) {
+            ml!(
+                "  {}",
+                self.foreign_function(
+                    "futhark_context_config_set_num_threads",
+                    "void",
+                    vec!["context_config", "int"]
+                )
+            );
+        }
+
         for (name, ty) in &library.manifest.types {
             match ty {
                 manifest::Type::Array(a) => {
@@ -300,6 +311,17 @@ impl Generate for OCaml {
 
         mli!("{}", error_t); // mli
 
+        let (num_threads_param, num_threads_line, num_threads_mli) =
+            if matches!(library.manifest.backend, Backend::Multicore) {
+                (
+                    "?(num_threads = 0)",
+                    "    Bindings.futhark_context_config_set_num_threads config num_threads;",
+                    "?num_threads:int ->",
+                )
+            } else {
+                ("", "", "")
+            };
+
         ml!(
             "open Bigarray";
             "";
@@ -310,12 +332,13 @@ impl Generate for OCaml {
             ignore (Bindings.futhark_context_free t.handle); \
             ignore (Bindings.futhark_context_config_free t.config)";
             "";
-            "  let v ?(debug = false) ?(log = false) ?(profile = false) ?cache_file () =";
+            "  let v ?(debug = false) ?(log = false) ?(profile = false) ?cache_file {num_threads_param} () =";
             "    let config = Bindings.futhark_context_config_new () in";
             "    if is_null config then raise (Error NullPtr);";
             "    Bindings.futhark_context_config_set_debugging config (if debug then 1 else 0);";
             "    Bindings.futhark_context_config_set_profiling config (if profile then 1 else 0);";
             "    Bindings.futhark_context_config_set_logging config (if log then 1 else 0);";
+            "    {num_threads_line}";
             "    Option.iter (Bindings.futhark_context_config_set_cache_file config) cache_file;";
             "    let handle = Bindings.futhark_context_new config in";
             "    if is_null handle then (ignore @@ Bindings.futhark_context_config_free config; raise (Error NullPtr));";
@@ -346,7 +369,7 @@ impl Generate for OCaml {
         mli!(
             "module Context: sig";
             "  type t";
-            "  val v: ?debug:bool -> ?log:bool -> ?profile:bool -> ?cache_file:string -> unit -> t";
+            "  val v: ?debug:bool -> ?log:bool -> ?profile:bool -> ?cache_file:string -> {num_threads_mli} unit -> t";
             "  val sync: t -> unit";
             "  val clear_caches: t -> unit";
             "  val get_error: t -> string option";

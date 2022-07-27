@@ -10,8 +10,8 @@ Currently supported languages:
 ## Command-line
 
 ```
-$ futhark-bindgen test.fut test.rs # Rust output
-$ futhark-bindgen test.fut test.ml # OCaml output
+$ futhark-bindgen run test.fut test.rs # Rust output
+$ futhark-bindgen run test.fut test.ml # OCaml output
 ```
 
 See the output of `futhark-bindgen --help` for more information

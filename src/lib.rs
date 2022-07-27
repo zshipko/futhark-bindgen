@@ -8,7 +8,7 @@ pub use error::Error;
 pub use generate::{Config, Generate, OCaml, Rust};
 pub use manifest::Manifest;
 
-#[derive(Debug, serde::Deserialize, Clone, Copy)]
+#[derive(Debug, serde::Deserialize, PartialEq, Clone, Copy)]
 pub enum Backend {
     #[serde(rename = "c")]
     C,
@@ -40,6 +40,14 @@ impl Backend {
             Backend::PyOpenCL => "pyopencl",
         }
     }
+
+    pub fn required_c_libs(&self) -> &'static [&'static str] {
+        match self {
+            Backend::CUDA => &["cuda", "cudart", "nvrtc", "m"],
+            Backend::OpenCL => &["OpenCL", "m"],
+            _ => &[],
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -59,14 +67,6 @@ pub struct Library {
 }
 
 impl Library {
-    pub fn required_c_libs(&self) -> &'static [&'static str] {
-        match self.manifest.backend {
-            Backend::CUDA => &["cuda", "cudart", "nvrtc", "m"],
-            Backend::OpenCL => &["OpenCL", "m"],
-            _ => &[],
-        }
-    }
-
     #[cfg(feature = "build")]
     pub fn link(&self) {
         cc::Build::new()
@@ -75,7 +75,7 @@ impl Library {
             .compile("futhark_generate");
         println!("cargo:rustc-link-lib=futhark_generate");
 
-        let libs = self.required_c_libs();
+        let libs = self.manifest.backend.required_c_libs();
 
         for lib in libs {
             println!("cargo:rustc-link-lib={}", lib);

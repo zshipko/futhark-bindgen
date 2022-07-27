@@ -11,7 +11,38 @@ fn parse_backend(s: &str) -> Result<Backend, String> {
 
 #[derive(Debug, FromArgs)]
 #[argh(description = "futhark binding generator")]
-struct Args {
+struct Main {
+    #[argh(subcommand)]
+    command: Commands,
+}
+
+#[derive(Debug, FromArgs)]
+#[argh(subcommand)]
+enum Commands {
+    Run(Run),
+    Libs(Libs),
+}
+
+#[derive(Debug, FromArgs)]
+#[argh(
+    name = "libs",
+    description = "List libraries for the selected backend",
+    subcommand
+)]
+
+struct Libs {
+    #[argh(
+        option,
+        default = "Backend::C",
+        from_str_fn(parse_backend),
+        description = "futhark backend: c, cuda, opencl, multicore, python, pyopencl"
+    )]
+    backend: Backend,
+}
+
+#[derive(Debug, FromArgs)]
+#[argh(name = "run", description = "generate bindings", subcommand)]
+struct Run {
     #[argh(positional, description = "futhark input file")]
     input: std::path::PathBuf,
 
@@ -39,27 +70,38 @@ struct Args {
 }
 
 fn main() -> Result<(), Error> {
-    let args: Args = argh::from_env();
+    let args: Main = argh::from_env();
 
-    let mut compiler = Compiler::new(args.backend, &args.input);
-    if let Some(exe) = args.compiler {
-        compiler.set_executable_name(exe);
-    }
-    compiler.set_extra_args(args.futhark_args);
-    let lib = match compiler.compile()? {
-        Some(l) => l,
-        None => {
-            let py_file = args.input.with_extension("py");
-            if args.output != py_file {
-                std::fs::copy(py_file, args.output)?;
+    match args.command {
+        Commands::Run(args) => {
+            let mut compiler = Compiler::new(args.backend, &args.input);
+            if let Some(exe) = args.compiler {
+                compiler.set_executable_name(exe);
             }
-            return Ok(());
-        }
-    };
+            compiler.set_extra_args(args.futhark_args);
+            let lib = match compiler.compile()? {
+                Some(l) => l,
+                None => {
+                    let py_file = args.input.with_extension("py");
+                    if args.output != py_file {
+                        std::fs::copy(py_file, args.output)?;
+                    }
+                    return Ok(());
+                }
+            };
 
-    let mut config = Config::new(args.output)?;
-    let mut gen = config.detect().expect("Unable to detect output language");
-    gen.generate(&lib, &mut config)?;
+            let mut config = Config::new(args.output)?;
+            let mut gen = config.detect().expect("Unable to detect output language");
+            gen.generate(&lib, &mut config)?;
+        }
+        Commands::Libs(args) => {
+            args.backend
+                .required_c_libs()
+                .iter()
+                .for_each(|x| print!("-l{x} "));
+            println!("");
+        }
+    }
 
     Ok(())
 }

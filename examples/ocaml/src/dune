@@ -2,7 +2,7 @@
     (targets example.c example.ml example.mli)
     (deps example.fut)
      (action
-         (run cargo run example.fut example.ml)))
+         (run cargo run -- run example.fut example.ml)))
 (library
     (name example)
     (public_name futhark-bindgen-example)

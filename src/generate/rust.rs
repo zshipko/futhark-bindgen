@@ -619,6 +619,16 @@ impl Generate for Rust {
             .arg("_", "*mut std::ffi::c_void")
             .gen(self);
 
+        match &library.manifest.backend {
+            Backend::Multicore => {
+                ExternFn::new("futhark_context_config_set_num_threads")
+                    .arg("_", "*mut futhark_context_config")
+                    .arg("_", "std::os::raw::c_int")
+                    .gen(self);
+            }
+            _ => (),
+        }
+
         let error = self.scope.new_enum("Error").vis("pub").derive("Debug");
         error.new_variant("Code").tuple("std::os::raw::c_int");
         error.new_variant("NullPtr");
@@ -633,6 +643,7 @@ impl Generate for Rust {
             .field("debug", "bool")
             .field("profile", "bool")
             .field("logging", "bool")
+            .field("num_threads", "u32")
             .field("cache_file", "Option<std::ffi::CString>");
 
         // Options
@@ -656,9 +667,22 @@ impl Generate for Rust {
             .ret("Options")
             .arg_self()
             .line("let mut x = self; x.logging = true; x");
-        opts.new_fn("cache_file").vis("pub").ret("Options").arg_self().arg("a", "impl AsRef<str>").line(
-            "let mut x = self; x.cache_file = Some(std::ffi::CString::new(a.as_ref()).expect(\"Invalid cache file\")); x",
-        );
+        opts.new_fn("cache_file")
+            .vis("pub")
+            .ret("Options")
+            .arg_self()
+            .arg("a", "impl AsRef<str>")
+            .line(
+                "let mut x = self; x.cache_file = Some(std::ffi::CString::new(a.as_ref()).expect(\"Invalid cache file\")); x",
+            );
+        if matches!(library.manifest.backend, Backend::Multicore) {
+            opts.new_fn("threads")
+                .vis("pub")
+                .ret("Options")
+                .arg_self()
+                .arg("n", "u32")
+                .line("let mut x = self; x.num_treads = true; x");
+        }
 
         // Context
         self.scope
@@ -692,6 +716,13 @@ impl Generate for Rust {
             .line("unsafe { futhark_context_config_set_debugging(config, options.debug as std::os::raw::c_int) }")
             .line("unsafe { futhark_context_config_set_profiling(config, options.profile as std::os::raw::c_int) }")
             .line("unsafe { futhark_context_config_set_logging(config, options.logging as std::os::raw::c_int) }")
+            .line(
+                if matches!(library.manifest.backend, Backend::Multicore) {
+                    "unsafe { futhark_context_config_set_num_threads(config, options.num_threads as std::os::raw::c_int) }" 
+                } else {
+                    "let _ = options.num_threads;" 
+                }
+            )
             .line("if let Some(c) = &options.cache_file { unsafe { futhark_context_config_set_cache_file(config, c.as_ptr()); } }")
             .line("let context = unsafe { futhark_context_new(config) };")
             .line("if context.is_null() { return Err(Error::NullPtr) }")
