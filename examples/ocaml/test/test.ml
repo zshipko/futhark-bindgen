@@ -15,8 +15,5 @@ let () =
   let test: float array = Array.init 3 (fun i -> Genarray.get ba [|i|]) in
   Array.iter (Printf.printf "%f\n") test;
   Array.iter (Printf.printf "%f\n") init;
-  assert (Array.for_all2 (fun a b -> Float.equal a (b *. 2.5)) test init);
-  Array_f32_1d.free arr;
-  Array_f32_1d.free out;
-  Tup.free tup
+  assert (Array.for_all2 (fun a b -> Float.equal a (b *. 2.5)) test init)
 
