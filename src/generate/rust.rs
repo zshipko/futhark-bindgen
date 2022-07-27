@@ -626,6 +626,12 @@ impl Generate for Rust {
                     .arg("_", "std::os::raw::c_int")
                     .gen(self);
             }
+            Backend::OpenCL | Backend::CUDA => {
+                ExternFn::new("futhark_context_config_set_device")
+                    .arg("_", "*mut futhark_context_config")
+                    .arg("_", "*const std::os::raw::c_char")
+                    .gen(self);
+            }
             _ => (),
         }
 
@@ -644,7 +650,8 @@ impl Generate for Rust {
             .field("profile", "bool")
             .field("logging", "bool")
             .field("num_threads", "u32")
-            .field("cache_file", "Option<std::ffi::CString>");
+            .field("cache_file", "Option<std::ffi::CString>")
+            .field("device", "Option<std::ffi::CString>");
 
         // Options
         let opts = self.scope.new_impl("Options");
@@ -675,13 +682,27 @@ impl Generate for Rust {
             .line(
                 "let mut x = self; x.cache_file = Some(std::ffi::CString::new(a.as_ref()).expect(\"Invalid cache file\")); x",
             );
-        if matches!(library.manifest.backend, Backend::Multicore) {
-            opts.new_fn("threads")
-                .vis("pub")
-                .ret("Options")
-                .arg_self()
-                .arg("n", "u32")
-                .line("let mut x = self; x.num_treads = true; x");
+
+        match library.manifest.backend {
+            Backend::Multicore => {
+                opts.new_fn("threads")
+                    .vis("pub")
+                    .ret("Options")
+                    .arg_self()
+                    .arg("n", "u32")
+                    .line("let mut x = self; x.num_treads = true; x");
+            }
+            Backend::CUDA | Backend::OpenCL => {
+                opts.new_fn("device")
+                    .vis("pub")
+                    .ret("Options")
+                    .arg_self()
+                    .arg("a", "impl AsRef<str>")
+                    .line(
+                        "let mut x = self; x.device = Some(std::ffi::CString::new(a.as_ref()).expect(\"Invalid device\")); x",
+                    );
+            }
+            _ => (),
         }
 
         // Context
@@ -717,13 +738,20 @@ impl Generate for Rust {
             .line("unsafe { futhark_context_config_set_profiling(config, options.profile as std::os::raw::c_int) }")
             .line("unsafe { futhark_context_config_set_logging(config, options.logging as std::os::raw::c_int) }")
             .line(
-                if matches!(library.manifest.backend, Backend::Multicore) {
-                    "unsafe { futhark_context_config_set_num_threads(config, options.num_threads as std::os::raw::c_int) }" 
+                if library.manifest.backend == Backend::Multicore {
+                    "unsafe { futhark_context_config_set_num_threads(config, options.num_threads as std::os::raw::c_int) }"
                 } else {
-                    "let _ = options.num_threads;" 
+                    "let _ = &options.num_threads;"
                 }
             )
             .line("if let Some(c) = &options.cache_file { unsafe { futhark_context_config_set_cache_file(config, c.as_ptr()); } }")
+            .line(
+                if matches!(library.manifest.backend, Backend::CUDA | Backend::OpenCL) {
+                    "if let Some(d) = &options.device { unsafe { futhark_context_config_set_device(config, d.as_ptr()); } }"
+                } else {
+                    "let _ = &options.device;"
+                }
+            )
             .line("let context = unsafe { futhark_context_new(config) };")
             .line("if context.is_null() { return Err(Error::NullPtr) }")
             .line("Ok(Context { config, context, _cache_file: options.cache_file })");
