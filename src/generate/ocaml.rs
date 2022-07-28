@@ -430,8 +430,8 @@ impl Generate for OCaml {
                         )?;
                     }
 
-                    writeln!(config.output_file, "end")?;
-                    writeln!(mli_file, "end")?;
+                    writeln!(config.output_file, "end\n")?;
+                    writeln!(mli_file, "end\n")?;
                 }
             }
         }

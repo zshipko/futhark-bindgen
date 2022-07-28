@@ -23,7 +23,7 @@ module Bindings = struct
   let free = fn "free" (ptr void @-> returning void)
   let strlen = fn "strlen" (ptr char @-> returning size_t)
   
-  {generated_foreign_functions}
+{generated_foreign_functions}
 end
 
 type error = 
