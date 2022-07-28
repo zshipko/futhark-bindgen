@@ -73,7 +73,10 @@ fn main() -> Result<(), Error> {
     let args: Main = argh::from_env();
 
     match args.command {
-        Commands::Run(args) => {
+        Commands::Run(mut args) => {
+            if args.output.is_relative() {
+                args.output = std::path::PathBuf::from(".").join(args.output);
+            }
             let out_dir = args
                 .output
                 .parent()
