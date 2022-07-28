@@ -447,12 +447,17 @@ impl Generate for OCaml {
 
         writeln!(config.output_file, "module Entry = struct")?;
         writeln!(mli_file, "module Entry: sig")?;
+
         for (name, entry) in &library.manifest.entry_points {
-            write!(config.output_file, "  let {} ctx", name)?;
-            write!(mli_file, "  val {}: Context.t", name)?; // mli
+            let mut arg_types = Vec::new();
+            let mut return_type = Vec::new();
+            let mut entry_params = Vec::new();
+            let mut call_args = Vec::new();
+            let mut out_return = Vec::new();
+            let mut out_decl = Vec::new();
 
             for (i, input) in entry.inputs.iter().enumerate() {
-                write!(config.output_file, " input{i}")?;
+                entry_params.push(format!("input{i}"));
 
                 let mut ocaml_elemtype = self.get_type(&input.r#type);
 
@@ -461,31 +466,21 @@ impl Generate for OCaml {
                     ocaml_elemtype = first_uppercase(&ocaml_elemtype) + ".t"
                 }
 
-                write!(mli_file, " -> {}", ocaml_elemtype)?; // mli
+                arg_types.push(ocaml_elemtype);
             }
 
-            write!(mli_file, " -> (")?;
-
             for (i, out) in entry.outputs.iter().enumerate() {
-                let mut ocaml_elemtype = self.get_type(&out.r#type);
+                let t = self.get_type(&out.r#type);
+                let ct = self.get_ctype(&out.r#type);
+
+                let mut ocaml_elemtype = t.clone();
 
                 // Transform into `Module.t`
                 if ocaml_elemtype.contains("array_") {
                     ocaml_elemtype = first_uppercase(&ocaml_elemtype) + ".t"
                 }
 
-                if i == entry.outputs.len() - 1 {
-                    write!(mli_file, "{ocaml_elemtype}")?; // mli
-                } else {
-                    write!(mli_file, "{ocaml_elemtype},")?; // mli
-                }
-            }
-            writeln!(config.output_file, " =")?;
-            writeln!(mli_file, ")")?; // mli
-
-            for (i, out) in entry.outputs.iter().enumerate() {
-                let t = self.get_type(&out.r#type);
-                let ct = self.get_ctype(&out.r#type);
+                return_type.push(ocaml_elemtype);
 
                 let i = if entry.outputs.len() == 1 {
                     String::new()
@@ -494,27 +489,17 @@ impl Generate for OCaml {
                 };
 
                 if type_is_array(&t) {
-                    writeln!(
-                        config.output_file,
+                    out_decl.push(format!(
                         "    let out{i}_ptr = allocate_n (ptr void) ~count:1 in"
-                    )?;
+                    ));
                 } else if type_is_opaque(&t) {
-                    writeln!(
-                        config.output_file,
+                    out_decl.push(format!(
                         "    let out{i}_ptr = allocate_n (ptr void) ~count:1 in"
-                    )?;
+                    ));
                 } else {
-                    writeln!(
-                        config.output_file,
-                        "    let out{i}_ptr = allocate_n {ct} ~count:1 in"
-                    )?;
+                    out_decl.push(format!("    let out{i}_ptr = allocate_n {ct} ~count:1 in"));
                 }
             }
-
-            write!(
-                config.output_file,
-                "    let rc = Bindings.futhark_entry_{name} ctx.Context.handle"
-            )?;
 
             for (i, _out) in entry.outputs.iter().enumerate() {
                 let i = if entry.outputs.len() == 1 {
@@ -522,26 +507,20 @@ impl Generate for OCaml {
                 } else {
                     format!("{i}")
                 };
-                write!(config.output_file, " out{i}_ptr")?;
+                call_args.push(format!("out{i}_ptr"));
             }
 
             for (i, input) in entry.inputs.iter().enumerate() {
                 let t = self.get_type(&input.r#type);
                 if type_is_array(&t) {
-                    write!(config.output_file, " input{i}.ptr")?;
+                    call_args.push(format!("input{i}.ptr"));
                 } else if type_is_opaque(&t) {
-                    write!(config.output_file, " input{i}.opaque_ptr")?;
+                    call_args.push(format!("input{i}.opaque_ptr"));
                 } else {
-                    write!(config.output_file, " input{i}")?;
+                    call_args.push(format!("input{i}"));
                 }
             }
-            writeln!(config.output_file, " in")?;
-            writeln!(
-                config.output_file,
-                "    if rc <> 0 then raise (Error (Code rc));"
-            )?;
 
-            write!(config.output_file, "(")?;
             for (i, out) in entry.outputs.iter().enumerate() {
                 let t = self.get_type(&out.r#type);
 
@@ -553,20 +532,31 @@ impl Generate for OCaml {
 
                 if type_is_array(&t) {
                     let m = first_uppercase(&t);
-                    write!(config.output_file, "({m}.of_raw ctx !@out{idx}_ptr)")?;
+                    out_return.push(format!("({m}.of_raw ctx !@out{idx}_ptr)"));
                 } else if type_is_opaque(&t) {
                     let m = first_uppercase(&t);
                     let m = m.strip_suffix(".t").unwrap_or(&m);
-                    write!(config.output_file, "({m}.of_raw ctx !@out{idx}_ptr)")?;
+                    out_return.push(format!("({m}.of_raw ctx !@out{idx}_ptr)"));
                 } else {
-                    write!(config.output_file, "!@out{idx}_ptr")?;
-                }
-
-                if i != entry.outputs.len() - 1 {
-                    write!(config.output_file, ", ")?;
+                    out_return.push(format!("!@out{idx}_ptr"));
                 }
             }
-            writeln!(config.output_file, ")")?;
+            writeln!(
+                config.output_file,
+                include_str!("templates/ocaml/entry.ml"),
+                name = name,
+                entry_params = entry_params.join(" "),
+                out_decl = out_decl.join("\n"),
+                call_args = call_args.join(" "),
+                out_return = out_return.join(", ")
+            )?;
+            writeln!(
+                mli_file,
+                include_str!("templates/ocaml/entry.mli"),
+                name = name,
+                arg_types = arg_types.join(" -> "),
+                return_type = return_type.join(", "),
+            )?;
         }
         writeln!(config.output_file, "end")?;
         writeln!(mli_file, "end")?;
