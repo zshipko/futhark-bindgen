@@ -334,23 +334,22 @@ impl Generate for OCaml {
 
                     let free_fn = &ty.ops.free;
 
+                    writeln!(config.output_file, "module {module_name} = struct")?;
+                    writeln!(mli_file, "module {module_name} : sig")?;
+
+                    writeln!(
+                        config.output_file,
+                        include_str!("templates/ocaml/opaque.ml"),
+                        free_fn = free_fn,
+                        name = name,
+                    )?;
+                    writeln!(mli_file, include_str!("templates/ocaml/opaque.mli"),)?;
+
                     let record = match &ty.record {
                         Some(r) => r,
                         None => {
-                            writeln!(
-                                config.output_file,
-                                include_str!("templates/ocaml/opaque.ml"),
-                                record_ml = "",
-                                module_name = module_name,
-                                free_fn = free_fn,
-                                name = name,
-                            )?;
-                            writeln!(
-                                mli_file,
-                                include_str!("templates/ocaml/opaque.mli"),
-                                record_mli = "",
-                                module_name = module_name
-                            )?;
+                            writeln!(config.output_file, "end")?;
+                            writeln!(mli_file, "end")?;
                             continue;
                         }
                     };
@@ -375,17 +374,19 @@ impl Generate for OCaml {
                         }
                     }
 
-                    let mut record_ml = format!(
+                    writeln!(
+                        config.output_file,
                         include_str!("templates/ocaml/record.ml"),
                         new_params = new_params.join(" "),
                         new_fn = record.new,
                         new_call_args = new_call_args.join(" "),
-                    );
+                    )?;
 
-                    let mut record_mli = format!(
+                    writeln!(
+                        mli_file,
                         include_str!("templates/ocaml/record.mli"),
                         new_arg_types = new_arg_types.join(" -> ")
-                    );
+                    )?;
 
                     for f in record.fields.iter() {
                         let t = self.get_type(&f.r#type);
@@ -413,34 +414,24 @@ impl Generate for OCaml {
                             format!("{t}")
                         };
 
-                        record_ml += &format!(
+                        writeln!(
+                            config.output_file,
                             include_str!("templates/ocaml/record_project.ml"),
                             name = name,
                             s = s,
                             project = project,
                             out = out
-                        );
-                        record_mli += &format!(
+                        )?;
+                        writeln!(
+                            mli_file,
                             include_str!("templates/ocaml/record_project.mli"),
                             name = name,
                             out_type = out_type
-                        );
+                        )?;
                     }
 
-                    writeln!(
-                        config.output_file,
-                        include_str!("templates/ocaml/opaque.ml"),
-                        record_ml = record_ml,
-                        module_name = module_name,
-                        free_fn = free_fn,
-                        name = name,
-                    )?;
-                    writeln!(
-                        mli_file,
-                        include_str!("templates/ocaml/opaque.mli"),
-                        record_mli = record_mli,
-                        module_name = module_name
-                    )?;
+                    writeln!(config.output_file, "end")?;
+                    writeln!(mli_file, "end")?;
                 }
             }
         }
