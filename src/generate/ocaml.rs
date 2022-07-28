@@ -250,10 +250,22 @@ impl Generate for OCaml {
                     );
                 }
                 manifest::Type::Opaque(ty) => {
-                    let new_fn = &ty.record.new;
                     ml!("  let {name} = typedef (ptr void) \"{name}\"");
+
+                    let free_fn = &ty.ops.free;
+                    ml!(
+                        "  {}",
+                        self.foreign_function(free_fn, "int", vec!["context", name])
+                    );
+
+                    let record = match &ty.record {
+                        Some(r) => r,
+                        None => continue,
+                    };
+
+                    let new_fn = &record.new;
                     let mut args = vec!["context".to_string(), format!("ptr {name}")];
-                    for f in ty.record.fields.iter() {
+                    for f in record.fields.iter() {
                         let cty = self
                             .ctypes_map
                             .get(&f.r#type)
@@ -264,13 +276,7 @@ impl Generate for OCaml {
                     let args = args.iter().map(|x| x.as_str()).collect();
                     ml!("  {}", self.foreign_function(new_fn, "int", args));
 
-                    let free_fn = &ty.ops.free;
-                    ml!(
-                        "  {}",
-                        self.foreign_function(free_fn, "int", vec!["context", name])
-                    );
-
-                    for f in ty.record.fields.iter() {
+                    for f in record.fields.iter() {
                         let cty = self
                             .ctypes_map
                             .get(&f.r#type)
@@ -295,15 +301,11 @@ impl Generate for OCaml {
             for out in &entry.outputs {
                 let t = self.get_ctype(&out.r#type);
 
-                /*if type_is_array(&t) || type_is_opaque(&t) {
-                    args.push(t);
-                } else {*/
                 args.push(format!("ptr {t}"));
-                //}
             }
 
             for input in &entry.inputs {
-                let t = self.get_type(&input.r#type);
+                let t = self.get_ctype(&input.r#type);
                 args.push(t);
             }
 
@@ -493,11 +495,32 @@ impl Generate for OCaml {
 
                     let free_fn = &ty.ops.free;
                     ml!("  let free t = ignore (Bindings.{free_fn} t.opaque_ctx.Context.handle t.opaque_ptr)");
+
+                    ml!(
+                        "  let of_raw ctx ptr =";
+                        "    if is_null ptr then raise (Error NullPtr);";
+                        "    let t = {} opaque_ptr = ptr; opaque_ctx = ctx {} in", '{', '}';
+                        "    Gc.finalise free t; t";
+                        "";
+                        "let _ = of_raw";
+                    );
+                    let record = match &ty.record {
+                        Some(r) => r,
+                        None => {
+                            mli!(
+                                "val free: t -> unit";
+                                 "end"
+                            );
+                            ml!("end");
+                            continue;
+                        }
+                    };
+
                     ml_no_newline!("  let v ctx");
                     mli_no_newline!("  val v: Context.t");
 
                     let mut args = vec![];
-                    for f in ty.record.fields.iter() {
+                    for f in record.fields.iter() {
                         let t = self.get_type(&f.r#type);
                         ml_no_newline!(" field{}", f.name);
 
@@ -519,7 +542,7 @@ impl Generate for OCaml {
                     ml!(" = ");
                     mli!(" -> t");
 
-                    let new_fn = &ty.record.new;
+                    let new_fn = &record.new;
                     ml!(
                         "    let ptr = allocate (ptr void) null in";
                         "    let rc = Bindings.{new_fn} ctx.Context.handle ptr {} in", args.join(" ");
@@ -529,16 +552,7 @@ impl Generate for OCaml {
                         "    Gc.finalise free t; t";
                     );
 
-                    ml!(
-                        "  let of_raw ctx ptr =";
-                        "    if is_null ptr then raise (Error NullPtr);";
-                        "    let t = {} opaque_ptr = ptr; opaque_ctx = ctx {} in", '{', '}';
-                        "    Gc.finalise free t; t";
-                        "";
-                        "let _ = of_raw";
-                    );
-
-                    for f in ty.record.fields.iter() {
+                    for f in record.fields.iter() {
                         let t = self.get_type(&f.r#type);
                         let name = &f.name;
                         let project = &f.project;
@@ -634,7 +648,7 @@ impl Generate for OCaml {
                 if type_is_array(&t) {
                     ml!("    let out{i}_ptr = allocate_n (ptr void) ~count:1 in");
                 } else if type_is_opaque(&t) {
-                    ml!("    let out{i}_ptr = allocate_n (ptr void) ~count:1) in");
+                    ml!("    let out{i}_ptr = allocate_n (ptr void) ~count:1 in");
                 } else {
                     ml!("    let out{i}_ptr = allocate_n {ct} ~count:1 in");
                 }
@@ -683,6 +697,7 @@ impl Generate for OCaml {
                     ml_no_newline!("({m}.of_raw ctx !@out{idx}_ptr)");
                 } else if type_is_opaque(&t) {
                     let m = first_uppercase(&t);
+                    let m = m.strip_suffix(".t").unwrap_or(&m);
                     ml_no_newline!("({m}.of_raw ctx !@out{idx}_ptr)");
                 } else {
                     ml_no_newline!("!@out{idx}_ptr");

@@ -118,7 +118,7 @@ pub struct Record {
 pub struct OpaqueType {
     pub ctype: String,
     pub ops: OpaqueOps,
-    pub record: Record,
+    pub record: Option<Record>,
 }
 
 #[derive(Clone, Debug, serde::Deserialize)]

@@ -137,7 +137,7 @@ impl Rust {
             .arg("ctx", "&'a Context")
             .arg("dims", &format!("[i64; {rank}]"))
             .arg("data", &format!("&[{elemtype}]"))
-            .ret("Result<Self, Error>")
+            .ret("std::result::Result<Self, Error>")
             .line("if data.len() as i64 != dims.iter().fold(1, |a, b| a * b) { return Err(Error::InvalidShape); }")
             .line("let ptr = unsafe {")
             .line(&format!(
@@ -156,7 +156,7 @@ impl Rust {
             .doc("Load array data into a mutable slice")
             .arg_ref_self()
             .arg("data", &format!("&mut [{elemtype}]"))
-            .ret("Result<(), Error>")
+            .ret("std::result::Result<(), Error>")
             .line("if data.len() as i64 != self.shape.iter().fold(1, |a, b| a * b) { return Err(Error::InvalidShape); }")
             .line("let rc = unsafe {")
             .line(&format!("    futhark_values_{elemtype}_{rank}d(self.ctx, self.ptr as *mut _, data.as_mut_ptr())"))
@@ -275,35 +275,11 @@ impl Rust {
             .repr("C")
             .field("_private", "[u8; 0]");
 
-        // Extern definitions
-
-        let mut new = ExternFn::new(format!("futhark_new_opaque_{name}"))
-            .arg("_", "*mut futhark_context")
-            .arg("out", format!("*mut *mut {original_name}"))
-            .ret("std::os::raw::c_int");
-
-        for field in ty.record.fields.iter() {
-            let t = Self::get_type(&self.typemap, &field.r#type);
-            new = new.arg(format!("field{}", field.name), t);
-        }
-        new.gen(self);
-
         let _free = ExternFn::new(format!("futhark_free_opaque_{name}"))
             .arg("_", "*mut futhark_context")
             .arg("_", format!("*mut {original_name}"))
             .ret("std::os::raw::c_int")
             .gen(self);
-
-        for field in ty.record.fields.iter() {
-            let t = Self::get_type(&self.typemap, &field.r#type);
-
-            let _project = ExternFn::new(format!("futhark_project_opaque_{name}_{}", field.name))
-                .arg("_", "*mut futhark_context")
-                .arg("_", format!("*mut {}", t))
-                .arg("_", format!("*const {original_name}"))
-                .ret("std::os::raw::c_int")
-                .gen(self);
-        }
 
         // Rust struct definition
 
@@ -345,15 +321,51 @@ impl Rust {
             .ret("Self")
             .line("Self { ctx, data, _t: std::marker::PhantomData }");
 
+        let record = match &ty.record {
+            Some(r) => r,
+            None => return Ok(rust_name),
+        };
+
+        // Extern definitions
+
+        let mut new = ExternFn::new(format!("futhark_new_opaque_{name}"))
+            .arg("_", "*mut futhark_context")
+            .arg("out", format!("*mut *mut {original_name}"))
+            .ret("std::os::raw::c_int");
+
+        for field in record.fields.iter() {
+            let t = Self::get_type(&self.typemap, &field.r#type);
+            new = new.arg(format!("field{}", field.name), t);
+        }
+        new.gen(self);
+
+        for field in record.fields.iter() {
+            let t = Self::get_type(&self.typemap, &field.r#type);
+
+            let _project = ExternFn::new(format!("futhark_project_opaque_{name}_{}", field.name))
+                .arg("_", "*mut futhark_context")
+                .arg("_", format!("*mut {}", t))
+                .arg("_", format!("*const {original_name}"))
+                .ret("std::os::raw::c_int")
+                .gen(self);
+        }
+
+        // Open impl block
+        let opaque = self
+            .scope
+            .new_impl(&rust_name)
+            .generic("'a")
+            .target_generic("'a");
+
         // Opaque::new
         let new_fn = opaque
             .new_fn("new")
             .vis("pub")
             .arg("ctx", "&'a Context")
-            .ret("Result<Self, Error>");
+            .ret("std::result::Result<Self, Error>");
 
         let mut args = vec![];
-        for field in ty.record.fields.iter() {
+        for field in record.fields.iter() {
             let a = Self::get_type(&self.typemap, &field.r#type);
             let t = Self::get_type(&self.typemap, &a);
 
@@ -386,7 +398,7 @@ impl Rust {
             .line("Ok(Self {data: out, ctx: ctx.context, _t: std::marker::PhantomData})");
 
         // Implement get functions
-        for field in ty.record.fields.iter() {
+        for field in record.fields.iter() {
             let a = Self::get_type(&self.typemap, &field.r#type);
             let t = Self::get_type(&self.typemap, &a);
 
@@ -394,7 +406,7 @@ impl Rust {
                 .new_fn(&format!("get_{}", field.name))
                 .vis("pub")
                 .arg_ref_self()
-                .ret(&format!("Result<{t}, Error>"));
+                .ret(&format!("std::result::Result<{t}, Error>"));
 
             func
                 .line("let mut out = std::mem::MaybeUninit::zeroed();")
@@ -449,19 +461,12 @@ impl Rust {
             ));
             call_args.push(format!("{name}.as_mut_ptr()"));
             ret.push(t);
-            /*if type_is_array(&t) {
-                call_args.push(format!("&mut {name}.ptr as *mut _"))
-            } else if type_is_opaque(&a) {
-                call_args.push(format!("&mut {name}.data as *mut _"));
-            } else {
-                call_args.push(format!("{name} as *mut _"));
-            }*/
         }
 
         if entry.outputs.len() <= 1 {
-            func.ret(&format!("Result<{}, Error>", ret.join(", ")));
+            func.ret(&format!("std::result::Result<{}, Error>", ret.join(", ")));
         } else {
-            func.ret(&format!("Result<({}), Error>", ret.join(", ")));
+            func.ret(&format!("std::result::Result<({}), Error>", ret.join(", ")));
         }
 
         // Input arguments
@@ -650,8 +655,8 @@ impl Generate for Rust {
             .field("profile", "bool")
             .field("logging", "bool")
             .field("num_threads", "u32")
-            .field("cache_file", "Option<std::ffi::CString>")
-            .field("device", "Option<std::ffi::CString>");
+            .field("cache_file", "std::option::Option<std::ffi::CString>")
+            .field("device", "std::option::Option<std::ffi::CString>");
 
         // Options
         let opts = self.scope.new_impl("Options");
@@ -711,7 +716,7 @@ impl Generate for Rust {
             .doc("Wrapper around futhark_context")
             .field("config", "*mut futhark_context_config")
             .field("context", "*mut futhark_context")
-            .field("_cache_file", "Option<std::ffi::CString>")
+            .field("_cache_file", "std::option::Option<std::ffi::CString>")
             .vis("pub");
 
         let ctx = self.scope.new_impl("Context");
@@ -719,7 +724,7 @@ impl Generate for Rust {
             .new_fn("new")
             .vis("pub")
             .doc("Create a new context")
-            .ret("Result<Self, Error>")
+            .ret("std::result::Result<Self, Error>")
             .line("let config = unsafe { futhark_context_config_new () };")
             .line("if config.is_null() { return Err(Error::NullPtr) }")
             .line("let context = unsafe { futhark_context_new(config) };")
@@ -730,7 +735,7 @@ impl Generate for Rust {
             .new_fn("new_with_options")
             .vis("pub")
             .doc("Create a new context with options")
-            .ret("Result<Self, Error>")
+            .ret("std::result::Result<Self, Error>")
             .arg("options", "Options")
             .line("let config = unsafe { futhark_context_config_new () };")
             .line("if config.is_null() { return Err(Error::NullPtr) }")
@@ -767,7 +772,7 @@ impl Generate for Rust {
             .new_fn("clear_caches")
             .vis("pub")
             .doc("Clear internal caches")
-            .ret("Result<(), Error>")
+            .ret("std::result::Result<(), Error>")
             .arg_ref_self()
             .line("let rc = unsafe { futhark_context_clear_caches(self.context) };")
             .line("if rc != 0 { return Err(Error::Code(rc)) }")
@@ -791,7 +796,7 @@ impl Generate for Rust {
             .new_fn("get_error")
             .vis("pub")
             .doc("Get error message")
-            .ret("Option<String>")
+            .ret("std::option::Option<String>")
             .arg_ref_self()
             .line("let s = unsafe { futhark_context_get_error(self.context) };")
             .line("if s.is_null() { return None; }")
@@ -803,7 +808,7 @@ impl Generate for Rust {
             .new_fn("report")
             .vis("pub")
             .doc("Get report with debug and profiling information")
-            .ret("Option<String>")
+            .ret("std::option::Option<String>")
             .arg_ref_self()
             .line("let s = unsafe { futhark_context_report(self.context) };")
             .line("if s.is_null() { return None; }")
