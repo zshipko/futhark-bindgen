@@ -1,0 +1,218 @@
+#[derive(Debug)]
+pub enum Error {{
+    Code(std::os::raw::c_int),
+    NullPtr,
+    InvalidShape,
+}}
+
+#[derive(Debug, Default, Clone)]
+pub struct Options {{
+    debug: bool,
+    profile: bool,
+    logging: bool,
+    num_threads: u32,
+    cache_file: std::option::Option<std::ffi::CString>,
+    device: std::option::Option<std::ffi::CString>,
+}}
+
+impl Options {{
+    pub fn new() -> Self {{
+        Self::default()
+    }}
+
+    pub fn debug(mut self) -> Self {{
+        self.debug = true;
+        self
+    }}
+
+    pub fn profile(mut self) -> Self {{
+        self.profile = true;
+        self
+    }}
+
+    pub fn log(mut self) -> Self {{
+        self.logging = true;
+        self
+    }}
+
+    pub fn cache_file(mut self, s: impl AsRef<str>) -> Self {{
+        self.cache_file = Some(std::ffi::CString::new(s.as_ref()).expect("Invalid cache file"));
+        self
+    }}
+    
+    {backend_options}
+}}
+
+pub struct Context {{
+    config: *mut futhark_context_config,
+    context: *mut futhark_context,
+    _cache_file: std::option::Option<std::ffi::CString>,
+}}
+
+impl Context {{
+    pub fn new() -> std::result::Result<Self, Error> {{
+        unsafe {{
+            let config = futhark_context_config_new();
+            if config.is_null() {{ return Err(Error::NullPtr) }}
+            let context = futhark_context_new(config);
+            if context.is_null() {{
+                futhark_context_config_free(config);
+                return Err(Error::NullPtr);
+            }}
+            Ok(Context {{ config, context, _cache_file: None }})
+        }}
+    }}
+    
+    pub fn new_with_options(options: Options) -> std::result::Result<Self, Error> {{     
+        unsafe {{ 
+            let config = futhark_context_config_new();
+            if config.is_null() {{ return Err(Error::NullPtr) }}
+        
+            futhark_context_config_set_debugging(config, options.debug as std::os::raw::c_int);
+            futhark_context_config_set_profiling(config, options.profile as std::os::raw::c_int);
+            futhark_context_config_set_logging(config, options.logging as std::os::raw::c_int);
+            
+            if let Some(c) = &options.cache_file {{
+                futhark_context_config_set_cache_file(config, c.as_ptr());
+            }}
+        
+            {configure_num_threads}
+            {configure_set_device}
+
+            let context = futhark_context_new(config);
+            if context.is_null() {{
+                futhark_context_config_free(config);
+                return Err(Error::NullPtr);
+            }}
+            Ok(Context {{ config, context, _cache_file: options.cache_file }})
+        }}
+    }}
+    
+    pub fn sync(&self) {{
+        unsafe {{ futhark_context_sync(self.context); }}  
+    }}
+    
+    pub fn clear_caches(&self) -> std::result::Result<(), Error> {{
+        let rc = unsafe {{
+            futhark_context_clear_caches(self.context)
+        }};
+        if rc != 0 {{ return Err(Error::Code(rc)) }}
+        Ok(())  
+    }}
+    
+    pub fn pause_profiling(&self) {{
+        unsafe {{ 
+            futhark_context_pause_profiling(self.context);    
+        }} 
+    }}
+    
+    pub fn unpause_profiling(&self) {{
+        unsafe {{ 
+            futhark_context_unpause_profiling(self.context);    
+        }} 
+    }}
+    
+    pub fn get_error(&self) -> std::option::Option<String> {{
+        unsafe {{
+            let s = futhark_context_get_error(self.context);
+            if s.is_null() {{ return None }}
+            let r = std::ffi::CStr::from_ptr(s).to_string_lossy().to_string();
+            free(s as *mut _);
+            Some(r)
+        }}  
+    }}
+    
+    
+    pub fn report(&self) -> std::option::Option<String> {{
+        unsafe {{
+            let s = futhark_context_report(self.context);
+            if s.is_null() {{ return None }}
+            let r = std::ffi::CStr::from_ptr(s).to_string_lossy().to_string();
+            free(s as *mut _);
+            Some(r)
+        }}  
+    }}
+}}
+
+impl Drop for Context {{
+    fn drop(&mut self) {{
+        unsafe {{
+            futhark_context_free(self.context);
+            futhark_context_config_free(self.config);  
+        }}    
+    }}
+}}
+
+#[repr(C)]
+#[allow(non_camel_case_types)]
+struct futhark_context_config {{
+    _private: [u8; 0]
+}}
+
+#[repr(C)]
+#[allow(non_camel_case_types)]
+struct futhark_context {{
+    _private: [u8; 0]
+}}
+
+extern "C" {{
+    fn futhark_context_config_new() -> *mut futhark_context_config;
+    fn futhark_context_config_free(
+        _: *mut futhark_context_config
+    );
+    fn futhark_context_config_set_debugging(
+        _: *mut futhark_context_config,
+        _: std::os::raw::c_int
+    );
+
+    fn futhark_context_config_set_profiling(
+        _: *mut futhark_context_config,
+        _: std::os::raw::c_int
+    );
+    
+    fn futhark_context_config_set_logging(
+        _: *mut futhark_context_config,
+        _: std::os::raw::c_int
+    );
+    
+    fn futhark_context_config_set_cache_file(
+        _: *mut futhark_context_config,
+        _: *const std::os::raw::c_char,
+    );
+    
+    fn futhark_context_new(
+        _: *mut futhark_context_config
+    ) -> *mut futhark_context;
+    
+    fn futhark_context_free(
+        _: *mut futhark_context
+    );
+    
+    fn futhark_context_sync(
+        _: *mut futhark_context,
+    ) -> std::os::raw::c_int; 
+    
+    fn futhark_context_clear_caches(
+        _: *mut futhark_context,
+    ) -> std::os::raw::c_int; 
+    
+    fn futhark_context_pause_profiling(
+        _: *mut futhark_context
+    );
+    
+    fn futhark_context_unpause_profiling(
+        _: *mut futhark_context
+    );
+    
+    fn futhark_context_get_error(
+        _: *mut futhark_context
+    ) -> *mut std::os::raw::c_char;
+    
+    fn futhark_context_report(
+        _: *mut futhark_context
+    ) -> *mut std::os::raw::c_char;
+    
+    fn free(_: *mut std::ffi::c_void);
+    
+    {backend_extern_functions}
+}}

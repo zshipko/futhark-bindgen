@@ -4,7 +4,6 @@ use std::io::Write;
 
 pub struct Rust {
     typemap: BTreeMap<String, String>,
-    scope: codegen::Scope,
 }
 
 fn type_is_array(t: &str) -> bool {
@@ -23,231 +22,58 @@ impl Default for Rust {
             .iter()
             .map(|(a, b)| (a.to_string(), b.to_string()))
             .collect();
-        Rust {
-            typemap,
-            scope: codegen::Scope::new(),
-        }
-    }
-}
-
-#[derive(Default)]
-pub struct ExternFn {
-    name: String,
-    args: Vec<(String, String)>,
-    ret: String,
-}
-
-impl ExternFn {
-    pub fn new(name: impl Into<String>) -> ExternFn {
-        ExternFn {
-            name: name.into(),
-            ..Default::default()
-        }
-    }
-
-    pub fn arg(mut self, name: impl Into<String>, t: impl Into<String>) -> Self {
-        self.args.push((name.into(), t.into()));
-        self
-    }
-
-    pub fn ret(mut self, r: impl Into<String>) -> Self {
-        self.ret = r.into();
-        self
-    }
-
-    pub fn gen(self, r: &mut Rust) {
-        let mut s = format!("extern \"C\" {} fn {}(", '{', self.name);
-        let mut args = Vec::new();
-        for arg in &self.args {
-            args.push(format!("{}: {}", arg.0, arg.1));
-        }
-        s += &args.join(", ");
-        s += ")";
-        if !self.ret.is_empty() {
-            s += "-> ";
-            s += &self.ret;
-        }
-        s += ";\n}\n";
-        r.scope.raw("#[allow(unused)]");
-        r.scope.raw(&s);
+        Rust { typemap }
     }
 }
 
 struct ArrayInfo {
-    original_name: String,
-    ptr: String,
-    rust_name: String,
+    futhark_type: String,
+    rust_type: String,
     #[allow(unused)]
     elem: String,
-    elem_ptr: String,
 }
 
 impl Rust {
-    fn generate_array_type(&mut self, a: &manifest::ArrayType) -> Result<ArrayInfo, Error> {
+    fn generate_array_type(
+        &mut self,
+        a: &manifest::ArrayType,
+        config: &mut Config,
+    ) -> Result<ArrayInfo, Error> {
         let elemtype = a.elemtype.to_str();
         let rank = a.rank;
 
-        let original_name = format!("futhark_{elemtype}_{rank}d");
-        let rust_name = format!("Array{}D{rank}", elemtype.to_ascii_uppercase(),);
-        let ptr = format!("*mut {original_name}");
+        let futhark_type = format!("futhark_{elemtype}_{rank}d");
+        let rust_type = format!("Array{}D{rank}", elemtype.to_ascii_uppercase(),);
         let info = ArrayInfo {
-            original_name,
-            ptr,
-            rust_name,
+            futhark_type,
+            rust_type,
             elem: elemtype.to_string(),
-            elem_ptr: format!("*mut {}", elemtype),
         };
 
-        // Original array type (from C)
-        self.scope
-            .new_struct(&info.original_name)
-            .allow("non_camel_case_types")
-            .repr("C")
-            .field("_private", "[u8; 0]");
-
-        // Rust wrapper
-        self.scope
-            .new_struct(&info.rust_name)
-            .field("ptr", &info.ptr)
-            .field("pub shape", &format!("[i64; {}]", a.rank))
-            .field("ctx", "*mut futhark_context")
-            .field("_t", "std::marker::PhantomData<&'a ()>")
-            .generic("'a")
-            .vis("pub")
-            .doc(&format!("A wrapper around {}", info.original_name));
-
-        // Build Array::new
-        let new_fn = format!("futhark_new_{elemtype}_{rank}d");
-        let array_impl = self
-            .scope
-            .new_impl(&info.rust_name)
-            .generic("'a")
-            .target_generic("'a");
         let mut dim_params = Vec::new();
         for i in 0..a.rank {
             let dim = format!("dims[{i}]");
             dim_params.push(dim);
         }
 
-        // Array::new
-        let _array_new = array_impl
-            .new_fn("new")
-            .vis("pub")
-            .doc("Create a new array from an existing slice")
-            .arg("ctx", "&'a Context")
-            .arg("dims", &format!("[i64; {rank}]"))
-            .arg("data", &format!("&[{elemtype}]"))
-            .ret("std::result::Result<Self, Error>")
-            .line("if data.len() as i64 != dims.iter().fold(1, |a, b| a * b) { return Err(Error::InvalidShape); }")
-            .line("let ptr = unsafe {")
-            .line(&format!(
-                "    {}(ctx.context, data.as_ptr(), {})",
-                &new_fn,
-                dim_params.join(", ")
-            ))
-            .line("};")
-            .line("if ptr.is_null() { return Err(Error::NullPtr); }")
-            .line("Ok(Self { ptr: ptr as *mut _, shape: dims, ctx: ctx.context, _t: std::marker::PhantomData })");
-
-        // Array::values
-        let _array_values = array_impl
-            .new_fn("values")
-            .vis("pub")
-            .doc("Load array data into a mutable slice")
-            .arg_ref_self()
-            .arg("data", &format!("&mut [{elemtype}]"))
-            .ret("std::result::Result<(), Error>")
-            .line("if data.len() as i64 != self.shape.iter().fold(1, |a, b| a * b) { return Err(Error::InvalidShape); }")
-            .line("let rc = unsafe {")
-            .line(&format!("    futhark_values_{elemtype}_{rank}d(self.ctx, self.ptr as *mut _, data.as_mut_ptr())"))
-            .line("};")
-            .line("if rc != 0 { return Err(Error::Code(rc)) }")
-            .line("Ok(())");
-
-        // Array::from_raw
-        let _array_from_raw = array_impl
-            .new_fn("from_raw")
-            .allow("unused")
-            .arg("ctx", "*mut futhark_context")
-            .arg("data", &info.ptr)
-            .ret("Self")
-            .line(&format!(
-                "let len_ptr = unsafe {} futhark_shape_{elemtype}_{rank}d(ctx, data) {};",
-                '{', '}'
-            ))
-            .line(&format!("let mut shape = [0i64; {rank}];"))
-            .line("unsafe {")
-            .line(&format!(
-                "for i in 0 .. {rank} {} shape[i] = *len_ptr.add(i); {}",
-                '{', '}'
-            ))
-            .line("}")
-            .line("Self { ctx, shape, ptr: data, _t: std::marker::PhantomData }");
-
-        // Implement Drop for Array
-        let _array_drop = self
-            .scope
-            .new_impl(&info.rust_name)
-            .generic("'a")
-            .target_generic("'a")
-            .impl_trait("Drop")
-            .new_fn("drop")
-            .arg_mut_self()
-            .line("unsafe {")
-            .line(&format!(
-                "    futhark_free_{elemtype}_{rank}d(self.ctx, self.ptr as *mut _);",
-            ))
-            .line("}");
-
-        // Extern definitions
-
-        ExternFn::new(&format!("futhark_shape_{elemtype}_{rank}d"))
-            .arg("_", "*mut futhark_context")
-            .arg("_", &info.ptr)
-            .ret("*const i64")
-            .gen(self);
-
-        let mut new = ExternFn::new(new_fn)
-            .arg("_", "*mut futhark_context")
-            .arg("_", &info.elem_ptr.replace("*mut", "*const"));
-
+        let new_fn = format!("futhark_new_{elemtype}_{rank}d");
+        let mut new_dim_args = Vec::new();
         for i in 0..a.rank {
-            new = new.arg(&format!("dim{i}"), "i64");
+            new_dim_args.push(format!("dim{i}: i64"));
         }
 
-        new.ret(&info.ptr).gen(self);
+        writeln!(
+            config.output_file,
+            include_str!("templates/rust/array.rs"),
+            futhark_type = info.futhark_type,
+            rust_type = info.rust_type,
+            rank = a.rank,
+            elemtype = info.elem,
+            new_fn = new_fn,
+            dim_params = dim_params.join(", "),
+            new_dim_args = new_dim_args.join(", ")
+        )?;
 
-        let mut new_raw = ExternFn::new(format!("futhark_new_raw_{elemtype}_{rank}d",))
-            .arg("_", "*mut futhark_context")
-            .arg("_", "*const u8")
-            .arg("offset", "i64");
-
-        for i in 0..a.rank {
-            new_raw = new_raw.arg(&format!("dim{i}"), "i64");
-        }
-
-        new_raw.ret(&info.ptr).gen(self);
-
-        // free
-        let _free = ExternFn::new(format!("futhark_free_{elemtype}_{rank}d"))
-            .arg("_", "*mut futhark_context")
-            .arg("_", &info.ptr)
-            .ret("std::os::raw::c_int")
-            .gen(self);
-
-        // values
-        let _values = ExternFn::new(format!("futhark_values_{elemtype}_{rank}d",))
-            .arg("_", "*mut futhark_context")
-            .arg("_", &info.ptr)
-            .arg("_", &info.elem_ptr)
-            .ret("std::os::raw::c_int")
-            .gen(self);
-
-        let _values_raw = ExternFn::new(format!("futhark_values_raw_{elemtype}_{rank}d",))
-            .arg("_", "*mut futhark_context")
-            .arg("_", &info.ptr)
-            .ret("*mut u8")
-            .gen(self);
         Ok(info)
     }
 
@@ -263,108 +89,27 @@ impl Rust {
         &mut self,
         name: &str,
         ty: &manifest::OpaqueType,
+        config: &mut Config,
     ) -> Result<String, Error> {
-        let original_name = format!("futhark_opaque_{name}");
-        let rust_name = format!("{}", first_uppercase(name));
+        let futhark_type = format!("futhark_opaque_{name}");
+        let rust_type = format!("{}", first_uppercase(name));
 
-        // C type
-
-        self.scope
-            .new_struct(&original_name)
-            .allow("non_camel_case_types")
-            .repr("C")
-            .field("_private", "[u8; 0]");
-
-        let _free = ExternFn::new(format!("futhark_free_opaque_{name}"))
-            .arg("_", "*mut futhark_context")
-            .arg("_", format!("*mut {original_name}"))
-            .ret("std::os::raw::c_int")
-            .gen(self);
-
-        // Rust struct definition
-
-        self.scope
-            .new_struct(&rust_name)
-            .vis("pub")
-            .generic("'a")
-            .field("data", &format!("*mut {original_name}"))
-            .field("ctx", "*mut futhark_context")
-            .field("_t", "std::marker::PhantomData<&'a ()>");
-
-        // Implement drop
-        self.scope
-            .new_impl(&rust_name)
-            .generic("'a")
-            .target_generic("'a")
-            .impl_trait("Drop")
-            .new_fn("drop")
-            .arg_mut_self()
-            .line("unsafe {")
-            .line(&format!(
-                "    futhark_free_opaque_{name}(self.ctx, self.data);",
-            ))
-            .line("}");
-
-        // Open impl block
-        let opaque = self
-            .scope
-            .new_impl(&rust_name)
-            .generic("'a")
-            .target_generic("'a");
-
-        // Opaque::from_raw
-        let _opaque_from_raw = opaque
-            .new_fn("from_raw")
-            .allow("unused")
-            .arg("ctx", "*mut futhark_context")
-            .arg("data", &format!("*mut {original_name}"))
-            .ret("Self")
-            .line("Self { ctx, data, _t: std::marker::PhantomData }");
+        writeln!(
+            config.output_file,
+            include_str!("templates/rust/opaque.rs"),
+            futhark_type = futhark_type,
+            rust_type = rust_type,
+            name = name,
+        )?;
 
         let record = match &ty.record {
             Some(r) => r,
-            None => return Ok(rust_name),
+            None => return Ok(rust_type),
         };
 
-        // Extern definitions
-
-        let mut new = ExternFn::new(format!("futhark_new_opaque_{name}"))
-            .arg("_", "*mut futhark_context")
-            .arg("out", format!("*mut *mut {original_name}"))
-            .ret("std::os::raw::c_int");
-
-        for field in record.fields.iter() {
-            let t = Self::get_type(&self.typemap, &field.r#type);
-            new = new.arg(format!("field{}", field.name), t);
-        }
-        new.gen(self);
-
-        for field in record.fields.iter() {
-            let t = Self::get_type(&self.typemap, &field.r#type);
-
-            let _project = ExternFn::new(format!("futhark_project_opaque_{name}_{}", field.name))
-                .arg("_", "*mut futhark_context")
-                .arg("_", format!("*mut {}", t))
-                .arg("_", format!("*const {original_name}"))
-                .ret("std::os::raw::c_int")
-                .gen(self);
-        }
-
-        // Open impl block
-        let opaque = self
-            .scope
-            .new_impl(&rust_name)
-            .generic("'a")
-            .target_generic("'a");
-
-        // Opaque::new
-        let new_fn = opaque
-            .new_fn("new")
-            .vis("pub")
-            .arg("ctx", "&'a Context")
-            .ret("std::result::Result<Self, Error>");
-
-        let mut args = vec![];
+        let mut new_call_args = vec![];
+        let mut new_params = vec![];
+        let mut new_extern_params = vec![];
         for field in record.fields.iter() {
             let a = Self::get_type(&self.typemap, &field.r#type);
             let t = Self::get_type(&self.typemap, &a);
@@ -376,132 +121,122 @@ impl Rust {
             };
 
             if type_is_opaque(&a) {
-                args.push(format!("field{}.data", field.name));
+                new_call_args.push(format!("field{}.data", field.name));
+                new_extern_params.push(format!("field{}: *const {a}", field.name));
             } else if type_is_array(&t) {
-                args.push(format!("field{}.ptr", field.name));
+                new_call_args.push(format!("field{}.ptr", field.name));
+                new_extern_params.push(format!("field{}: *const {a}", field.name));
             } else {
-                args.push(format!("field{}", field.name));
+                new_call_args.push(format!("field{}", field.name));
+                new_extern_params.push(format!("field{}: {a}", field.name));
             }
 
-            new_fn.arg(&format!("field{}", field.name), &u);
+            new_params.push(format!("field{}: {u}", field.name));
         }
 
-        new_fn
-            .line("let mut out: *mut _ = std::ptr::null_mut();")
-            .line(format!(
-                "let rc = unsafe {} futhark_new_opaque_{name}(ctx.context, &mut out, {}) {};",
-                '{',
-                args.join(", "),
-                '}'
-            ))
-            .line("if rc != 0 { return Err(Error::Code(rc)); }")
-            .line("Ok(Self {data: out, ctx: ctx.context, _t: std::marker::PhantomData})");
+        writeln!(
+            config.output_file,
+            include_str!("templates/rust/record.rs"),
+            rust_type = rust_type,
+            futhark_type = futhark_type,
+            new_params = new_params.join(", "),
+            new_call_args = new_call_args.join(", "),
+            new_extern_params = new_extern_params.join(", "),
+            name = name,
+        )?;
 
         // Implement get functions
         for field in record.fields.iter() {
             let a = Self::get_type(&self.typemap, &field.r#type);
             let t = Self::get_type(&self.typemap, &a);
 
-            let func = opaque
-                .new_fn(&format!("get_{}", field.name))
-                .vis("pub")
-                .arg_ref_self()
-                .ret(&format!("std::result::Result<{t}, Error>"));
-
-            func
-                .line("let mut out = std::mem::MaybeUninit::zeroed();")
-                .line(&format!("let rc = unsafe {} futhark_project_opaque_{name}_{}(self.ctx, out.as_mut_ptr(), self.data) {};", '{', field.name, '}'))
-                .line("if rc != 0 { return Err(Error::Code(rc)); }")
-                .line("let out = unsafe { out.assume_init() };");
-
             // If the output type is an array or opaque type then we need to wrap the return value
-            if type_is_opaque(&a) {
-                func.line(&format!("Ok({t}::from_raw(self.ctx, out))"));
+            let (output, futhark_field_type) = if type_is_opaque(&a) {
+                (
+                    format!("Ok({t}::from_raw(self.ctx, out))"),
+                    format!("*mut {a}"),
+                )
             } else if type_is_array(&t) {
-                func.line(&format!("Ok({t}::from_raw(self.ctx, out))"));
+                (
+                    format!("Ok({t}::from_raw(self.ctx, out))"),
+                    format!("*mut {a}"),
+                )
             } else {
-                func.line("Ok(out)");
-            }
+                ("Ok(out)".to_string(), a)
+            };
+
+            writeln!(
+                config.output_file,
+                include_str!("templates/rust/record_project.rs"),
+                rust_type = rust_type,
+                futhark_type = futhark_type,
+                field_name = field.name,
+                futhark_field_type = futhark_field_type,
+                rust_field_type = t,
+                name = name,
+                output = output
+            )?;
         }
 
-        Ok(rust_name)
+        Ok(rust_type)
     }
 
     fn generate_entry_function(
         &mut self,
         name: &str,
         entry: &manifest::Entry,
+        config: &mut Config,
     ) -> Result<(), Error> {
-        let mut c = ExternFn::new(&entry.cfun)
-            .arg("_", "*mut futhark_context")
-            .ret("std::os::raw::c_int");
-
-        let func = self
-            .scope
-            .new_impl("Context")
-            .new_fn(name)
-            .doc(&format!("Entry point: {name}"))
-            .vis("pub")
-            .arg_ref_self();
-
         let mut call_args = Vec::new();
-
-        let mut ret = Vec::new();
+        let mut entry_params = Vec::new();
+        let mut return_type = Vec::new();
+        let mut out_decl = Vec::new();
+        let mut futhark_entry_params = Vec::new();
+        let mut entry_return = Vec::new();
 
         // Output arguments
         for (i, arg) in entry.outputs.iter().enumerate() {
             let a = Self::get_type(&self.typemap, &arg.r#type);
 
             let name = format!("out{i}");
-            c = c.arg(&name, format!("*mut {a}"));
 
             let t = Self::get_type(&self.typemap, &a);
-            func.line(&format!(
-                "let mut {name} = std::mem::MaybeUninit::zeroed();"
-            ));
-            call_args.push(format!("{name}.as_mut_ptr()"));
-            ret.push(t);
-        }
 
-        if entry.outputs.len() <= 1 {
-            func.ret(&format!("std::result::Result<{}, Error>", ret.join(", ")));
-        } else {
-            func.ret(&format!("std::result::Result<({}), Error>", ret.join(", ")));
+            if type_is_array(&t) {
+                futhark_entry_params.push(format!("{name}: *mut *mut {a}"));
+            } else if type_is_opaque(&a) {
+                futhark_entry_params.push(format!("{name}: *mut *mut {a}"));
+            } else {
+                futhark_entry_params.push(format!("{name}: *mut {a}"));
+            }
+
+            out_decl.push(format!("let mut {name} = std::mem::MaybeUninit::zeroed();"));
+            call_args.push(format!("{name}.as_mut_ptr()"));
+            return_type.push(t);
         }
 
         // Input arguments
         for (i, arg) in entry.inputs.iter().enumerate() {
             let a = Self::get_type(&self.typemap, &arg.r#type);
             let name = format!("input{i}");
-            c = c.arg(&name, a.replace("*mut", "*const"));
 
             let t = Self::get_type(&self.typemap, &a);
 
             if type_is_array(&t) {
-                func.arg(&name, &format!("&{t}"));
+                futhark_entry_params.push(format!("{name}: *const {a}"));
+
+                entry_params.push(format!("{name}: &{t}"));
                 call_args.push(format!("{name}.ptr as *mut _"));
             } else if type_is_opaque(&a) {
-                func.arg(&name, &format!("&{t}"));
+                futhark_entry_params.push(format!("{name}: *const {a}"));
+
+                entry_params.push(format!("{name}: &{t}"));
                 call_args.push(format!("{name}.data as *mut _"));
             } else {
-                func.arg(&name, t);
+                futhark_entry_params.push(format!("{name}: {a}"));
+                entry_params.push(format!("{name}: {t}"));
                 call_args.push(name);
             }
-        }
-
-        func.line("let rc = unsafe {")
-            .line(&format!(
-                "{}(self.context, {})",
-                entry.cfun,
-                call_args.join(", ")
-            ))
-            .line("};")
-            .line("if rc != 0 { return Err(Error::Code(rc)) }");
-
-        if entry.outputs.len() <= 1 {
-            func.line("Ok(");
-        } else {
-            func.line("Ok((");
         }
 
         for (i, arg) in entry.outputs.iter().enumerate() {
@@ -512,31 +247,35 @@ impl Rust {
             let t = Self::get_type(&self.typemap, &a);
 
             if type_is_array(&t) {
-                func.line(&format!(
-                    "unsafe {} {t}::from_raw(self.context, {name}.assume_init()) {}",
-                    '{', '}'
-                ));
+                entry_return.push(format!("{t}::from_raw(self.context, {name}.assume_init())",));
             } else if type_is_opaque(&a) {
-                func.line(&format!(
-                    "unsafe {} {t}::from_raw(self.context, {name}.assume_init()) {}",
-                    '{', '}'
-                ));
+                entry_return.push(format!("{t}::from_raw(self.context, {name}.assume_init())",));
             } else {
-                func.line(&format!("unsafe {} {name}.assume_init() {}", '{', '}'));
-            }
-
-            if i != entry.outputs.len() - 1 {
-                func.line(",");
+                entry_return.push(format!("{name}.assume_init()"));
             }
         }
 
-        if entry.outputs.len() <= 1 {
-            func.line(")");
+        let (entry_return_type, entry_return) = if entry.outputs.len() <= 1 {
+            (return_type.join(", "), entry_return.join(", "))
         } else {
-            func.line("))");
-        }
+            (
+                format!("({})", return_type.join(", ")),
+                format!("({})", entry_return.join(", ")),
+            )
+        };
 
-        c.gen(self);
+        writeln!(
+            config.output_file,
+            include_str!("templates/rust/entry.rs"),
+            entry_name = name,
+            entry_params = entry_params.join(", "),
+            entry_return_type = entry_return_type,
+            out_decl = out_decl.join(";\n"),
+            call_args = call_args.join(", "),
+            entry_return = entry_return,
+            futhark_entry_params = futhark_entry_params.join(", "),
+        )?;
+
         Ok(())
     }
 }
@@ -544,311 +283,72 @@ impl Rust {
 impl Generate for Rust {
     fn generate(&mut self, library: &Library, config: &mut Config) -> Result<(), Error> {
         writeln!(config.output_file, "// Generated by futhark-bindgen\n")?;
-        self.scope
-            .new_struct("futhark_context_config")
-            .allow("non_camel_case_types")
-            .repr("C")
-            .field("_private", "[u8; 0]");
 
-        ExternFn::new("futhark_context_config_new")
-            .ret("*mut futhark_context_config")
-            .gen(self);
-
-        ExternFn::new("futhark_context_config_free")
-            .arg("_", "*mut futhark_context_config")
-            .gen(self);
-
-        ExternFn::new("futhark_context_config_set_debugging")
-            .arg("_", "*mut futhark_context_config")
-            .arg("_", "std::os::raw::c_int")
-            .gen(self);
-
-        ExternFn::new("futhark_context_config_set_profiling")
-            .arg("_", "*mut futhark_context_config")
-            .arg("_", "std::os::raw::c_int")
-            .gen(self);
-
-        ExternFn::new("futhark_context_config_set_logging")
-            .arg("_", "*mut futhark_context_config")
-            .arg("_", "std::os::raw::c_int")
-            .gen(self);
-
-        ExternFn::new("futhark_context_config_set_cache_file")
-            .arg("_", "*mut futhark_context_config")
-            .arg("_", "*const std::os::raw::c_char")
-            .gen(self);
-
-        self.scope
-            .new_struct("futhark_context")
-            .allow("non_camel_case_types")
-            .repr("C")
-            .field("_private", "[u8; 0]");
-
-        ExternFn::new("futhark_context_new")
-            .arg("config", "*mut futhark_context_config")
-            .ret("*mut futhark_context")
-            .gen(self);
-        ExternFn::new("futhark_context_free")
-            .arg("_", "*mut futhark_context")
-            .gen(self);
-
-        ExternFn::new("futhark_context_sync")
-            .arg("_", "*mut futhark_context")
-            .ret("std::os::raw::c_int")
-            .gen(self);
-
-        ExternFn::new("futhark_context_clear_caches")
-            .arg("_", "*mut futhark_context")
-            .ret("std::os::raw::c_int")
-            .gen(self);
-
-        ExternFn::new("futhark_context_pause_profiling")
-            .arg("_", "*mut futhark_context")
-            .gen(self);
-
-        ExternFn::new("futhark_context_unpause_profiling")
-            .arg("_", "*mut futhark_context")
-            .gen(self);
-
-        ExternFn::new("futhark_context_get_error")
-            .arg("_", "*mut futhark_context")
-            .ret("*mut std::os::raw::c_char")
-            .gen(self);
-
-        ExternFn::new("futhark_context_report")
-            .arg("_", "*mut futhark_context")
-            .ret("*mut std::os::raw::c_char")
-            .gen(self);
-
-        ExternFn::new("free")
-            .arg("_", "*mut std::ffi::c_void")
-            .gen(self);
-
-        match &library.manifest.backend {
+        let backend_extern_functions = match &library.manifest.backend {
             Backend::Multicore => {
-                ExternFn::new("futhark_context_config_set_num_threads")
-                    .arg("_", "*mut futhark_context_config")
-                    .arg("_", "std::os::raw::c_int")
-                    .gen(self);
+                "fn futhark_context_config_set_num_threads(_: *mut futhark_context_config, _: std::os::raw::c_int)"
             }
             Backend::OpenCL | Backend::CUDA => {
-                ExternFn::new("futhark_context_config_set_device")
-                    .arg("_", "*mut futhark_context_config")
-                    .arg("_", "*const std::os::raw::c_char")
-                    .gen(self);
+                "fn futhark_context_config_set_device(_: *mut futhark_context_config, _: *count std::os::raw::c_char)"
             }
-            _ => (),
-        }
+            _ => "",
+        };
 
-        let error = self.scope.new_enum("Error").vis("pub").derive("Debug");
-        error.new_variant("Code").tuple("std::os::raw::c_int");
-        error.new_variant("NullPtr");
-        error.new_variant("InvalidShape");
-
-        self.scope
-            .new_struct("Options")
-            .vis("pub")
-            .derive("Debug")
-            .derive("Default")
-            .derive("Clone")
-            .field("debug", "bool")
-            .field("profile", "bool")
-            .field("logging", "bool")
-            .field("num_threads", "u32")
-            .field("cache_file", "std::option::Option<std::ffi::CString>")
-            .field("device", "std::option::Option<std::ffi::CString>");
-
-        // Options
-        let opts = self.scope.new_impl("Options");
-        opts.new_fn("new")
-            .vis("pub")
-            .ret("Options")
-            .line("Options::default()");
-        opts.new_fn("debug")
-            .vis("pub")
-            .ret("Options")
-            .arg_self()
-            .line("let mut x = self; x.debug = true; x");
-        opts.new_fn("profile")
-            .vis("pub")
-            .ret("Options")
-            .arg_self()
-            .line("let mut x = self; x.profile = true; x");
-        opts.new_fn("log")
-            .vis("pub")
-            .ret("Options")
-            .arg_self()
-            .line("let mut x = self; x.logging = true; x");
-        opts.new_fn("cache_file")
-            .vis("pub")
-            .ret("Options")
-            .arg_self()
-            .arg("a", "impl AsRef<str>")
-            .line(
-                "let mut x = self; x.cache_file = Some(std::ffi::CString::new(a.as_ref()).expect(\"Invalid cache file\")); x",
-            );
-
-        match library.manifest.backend {
+        let backend_options = match library.manifest.backend {
             Backend::Multicore => {
-                opts.new_fn("threads")
-                    .vis("pub")
-                    .ret("Options")
-                    .arg_self()
-                    .arg("n", "u32")
-                    .line("let mut x = self; x.num_treads = true; x");
+                "pub fn threads(mut self, n: u32) -> Options { self.num_threads = n as std::os::raw::c_int; self }"
             }
             Backend::CUDA | Backend::OpenCL => {
-                opts.new_fn("device")
-                    .vis("pub")
-                    .ret("Options")
-                    .arg_self()
-                    .arg("a", "impl AsRef<str>")
-                    .line(
-                        "let mut x = self; x.device = Some(std::ffi::CString::new(a.as_ref()).expect(\"Invalid device\")); x",
-                    );
+                "pub fn device(mut self, s: impl AsRef<str>) -> Options { self.device = Some(std::ffi::CString::new(s.as_ref()).expect(\"Invalid device\")); self"
             }
-            _ => (),
-        }
+            _ => "",
+        };
 
-        // Context
-        self.scope
-            .new_struct("Context")
-            .doc("Wrapper around futhark_context")
-            .field("config", "*mut futhark_context_config")
-            .field("context", "*mut futhark_context")
-            .field("_cache_file", "std::option::Option<std::ffi::CString>")
-            .vis("pub");
+        let configure_num_threads = if library.manifest.backend == Backend::Multicore {
+            "futhark_context_config_set_num_threads(config, options.num_threads as std::os::raw::c_int);"
+        } else {
+            "let _ = &options.num_threads;"
+        };
 
-        let ctx = self.scope.new_impl("Context");
-        let _ctx_new = ctx
-            .new_fn("new")
-            .vis("pub")
-            .doc("Create a new context")
-            .ret("std::result::Result<Self, Error>")
-            .line("let config = unsafe { futhark_context_config_new () };")
-            .line("if config.is_null() { return Err(Error::NullPtr) }")
-            .line("let context = unsafe { futhark_context_new(config) };")
-            .line("if context.is_null() { return Err(Error::NullPtr) }")
-            .line("Ok(Context { config, context, _cache_file: None })");
+        let configure_set_device = if matches!(
+            library.manifest.backend,
+            Backend::CUDA | Backend::OpenCL
+        ) {
+            "if let Some(d) = &options.device { futhark_context_config_set_device(config, d.as_ptr()); }"
+        } else {
+            "let _ = &options.device;"
+        };
 
-        let _ctx_new_with_options = ctx
-            .new_fn("new_with_options")
-            .vis("pub")
-            .doc("Create a new context with options")
-            .ret("std::result::Result<Self, Error>")
-            .arg("options", "Options")
-            .line("let config = unsafe { futhark_context_config_new () };")
-            .line("if config.is_null() { return Err(Error::NullPtr) }")
-            .line("unsafe { futhark_context_config_set_debugging(config, options.debug as std::os::raw::c_int) }")
-            .line("unsafe { futhark_context_config_set_profiling(config, options.profile as std::os::raw::c_int) }")
-            .line("unsafe { futhark_context_config_set_logging(config, options.logging as std::os::raw::c_int) }")
-            .line(
-                if library.manifest.backend == Backend::Multicore {
-                    "unsafe { futhark_context_config_set_num_threads(config, options.num_threads as std::os::raw::c_int) }"
-                } else {
-                    "let _ = &options.num_threads;"
-                }
-            )
-            .line("if let Some(c) = &options.cache_file { unsafe { futhark_context_config_set_cache_file(config, c.as_ptr()); } }")
-            .line(
-                if matches!(library.manifest.backend, Backend::CUDA | Backend::OpenCL) {
-                    "if let Some(d) = &options.device { unsafe { futhark_context_config_set_device(config, d.as_ptr()); } }"
-                } else {
-                    "let _ = &options.device;"
-                }
-            )
-            .line("let context = unsafe { futhark_context_new(config) };")
-            .line("if context.is_null() { return Err(Error::NullPtr) }")
-            .line("Ok(Context { config, context, _cache_file: options.cache_file })");
-
-        let _ctx_sync = ctx
-            .new_fn("sync")
-            .doc("Sync context")
-            .vis("pub")
-            .arg_ref_self()
-            .line("unsafe { futhark_context_sync(self.context) };");
-
-        let _ctx_clear_caches = ctx
-            .new_fn("clear_caches")
-            .vis("pub")
-            .doc("Clear internal caches")
-            .ret("std::result::Result<(), Error>")
-            .arg_ref_self()
-            .line("let rc = unsafe { futhark_context_clear_caches(self.context) };")
-            .line("if rc != 0 { return Err(Error::Code(rc)) }")
-            .line("Ok(())");
-
-        let _ctx_pause_profiling = ctx
-            .new_fn("pause_profiling")
-            .vis("pub")
-            .doc("Pause profiling")
-            .arg_ref_self()
-            .line("unsafe { futhark_context_pause_profiling(self.context); }");
-
-        let _ctx_unpause_profiling = ctx
-            .new_fn("unpause_profiling")
-            .vis("pub")
-            .doc("Unpause profiling")
-            .arg_ref_self()
-            .line("unsafe { futhark_context_unpause_profiling(self.context); }");
-
-        let _ctx_get_error = ctx
-            .new_fn("get_error")
-            .vis("pub")
-            .doc("Get error message")
-            .ret("std::option::Option<String>")
-            .arg_ref_self()
-            .line("let s = unsafe { futhark_context_get_error(self.context) };")
-            .line("if s.is_null() { return None; }")
-            .line("let r = unsafe { std::ffi::CStr::from_ptr(s).to_string_lossy().to_string() };")
-            .line("unsafe { free(s as *mut _) };")
-            .line("Some(r)");
-
-        let _ctx_report = ctx
-            .new_fn("report")
-            .vis("pub")
-            .doc("Get report with debug and profiling information")
-            .ret("std::option::Option<String>")
-            .arg_ref_self()
-            .line("let s = unsafe { futhark_context_report(self.context) };")
-            .line("if s.is_null() { return None; }")
-            .line("let r = unsafe { std::ffi::CStr::from_ptr(s).to_string_lossy().to_string() };")
-            .line("unsafe { free(s as *mut _) };")
-            .line("Some(r)");
-
-        let _ctx_drop = self
-            .scope
-            .new_impl("Context")
-            .impl_trait("Drop")
-            .new_fn("drop")
-            .arg_mut_self()
-            .line("unsafe {")
-            .line("    futhark_context_free(self.context);")
-            .line("    futhark_context_config_free(self.config);")
-            .line("}");
+        writeln!(
+            config.output_file,
+            include_str!("templates/rust/context.rs"),
+            backend_options = backend_options,
+            configure_num_threads = configure_num_threads,
+            configure_set_device = configure_set_device,
+            backend_extern_functions = backend_extern_functions,
+        )?;
 
         for (name, ty) in &library.manifest.types {
             match ty {
                 manifest::Type::Array(a) => {
-                    let info = self.generate_array_type(a)?;
-                    self.typemap.insert(name.clone(), info.ptr.clone());
-                    self.typemap.insert(info.ptr, info.rust_name);
+                    let info = self.generate_array_type(a, config)?;
+                    self.typemap.insert(name.clone(), info.futhark_type.clone());
+                    self.typemap.insert(info.futhark_type, info.rust_type);
                 }
                 manifest::Type::Opaque(ty) => {
-                    let rust_type = self.generate_opaque_type(name, ty)?;
+                    let rust_type = self.generate_opaque_type(name, ty, config)?;
                     self.typemap
-                        .insert(name.clone(), format!("*mut futhark_opaque_{name}"));
+                        .insert(name.clone(), format!("futhark_opaque_{name}"));
                     self.typemap
-                        .insert(format!("*mut futhark_opaque_{name}"), rust_type);
+                        .insert(format!("futhark_opaque_{name}"), rust_type);
                 }
             }
         }
 
         for (name, entry) in &library.manifest.entry_points {
-            self.generate_entry_function(&name, entry)?;
+            self.generate_entry_function(&name, entry, config)?;
         }
 
-        write!(config.output_file, "{}", self.scope.to_string())?;
         let _ = std::process::Command::new("rustfmt")
             .arg(&config.output_path)
             .status();
