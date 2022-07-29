@@ -99,7 +99,6 @@ impl Library {
                 .flag("-pthread")
                 .flag("-lm")
                 .flag("-std=c99")
-                .shared_flag(true)
                 .warnings(false)
                 .compile(&name);
         } else {
