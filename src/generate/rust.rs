@@ -286,20 +286,20 @@ impl Generate for Rust {
 
         let backend_extern_functions = match &library.manifest.backend {
             Backend::Multicore => {
-                "fn futhark_context_config_set_num_threads(_: *mut futhark_context_config, _: std::os::raw::c_int)"
+                "fn futhark_context_config_set_num_threads(_: *mut futhark_context_config, _: std::os::raw::c_int);"
             }
             Backend::OpenCL | Backend::CUDA => {
-                "fn futhark_context_config_set_device(_: *mut futhark_context_config, _: *count std::os::raw::c_char)"
+                "fn futhark_context_config_set_device(_: *mut futhark_context_config, _: *const std::os::raw::c_char);"
             }
             _ => "",
         };
 
         let backend_options = match library.manifest.backend {
             Backend::Multicore => {
-                "pub fn threads(mut self, n: u32) -> Options { self.num_threads = n as std::os::raw::c_int; self }"
+                "pub fn threads(mut self, n: u32) -> Options { self.num_threads = n as u32; self }"
             }
             Backend::CUDA | Backend::OpenCL => {
-                "pub fn device(mut self, s: impl AsRef<str>) -> Options { self.device = Some(std::ffi::CString::new(s.as_ref()).expect(\"Invalid device\")); self"
+                "pub fn device(mut self, s: impl AsRef<str>) -> Options { self.device = Some(std::ffi::CString::new(s.as_ref()).expect(\"Invalid device\")); self }"
             }
             _ => "",
         };

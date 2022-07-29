@@ -21,6 +21,7 @@ impl<'a> {rust_type}<'a> {{
             {new_fn}(ctx.context, data.as_ptr(), {dim_params})    
         }};
         if ptr.is_null() {{ return Err(Error::NullPtr); }}
+        ctx.sync();
         Ok(Self {{
             ptr: ptr as *mut _,
             shape: dims,

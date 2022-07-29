@@ -55,6 +55,16 @@ fn type_is_opaque(t: &str) -> bool {
     t.contains(".t")
 }
 
+fn ba_kind(t: &str) -> String {
+    let mut s = t.strip_suffix("_elt").unwrap().to_string();
+
+    if let Some(r) = s.get_mut(8..9) {
+        r.make_ascii_uppercase();
+    }
+
+    s
+}
+
 impl Default for OCaml {
     fn default() -> Self {
         let typemap = OCAML_TYPE_MAP
@@ -317,7 +327,10 @@ impl Generate for OCaml {
                         module_name = module_name,
                         elemtype = elemtype,
                         rank = rank,
-                        dim_args = dim_args.join(" ")
+                        dim_args = dim_args.join(" "),
+                        ocaml_elemtype = ocaml_elemtype,
+                        ba_elemtype = ba_elemtype,
+                        ba_kind = ba_kind(&ba_elemtype),
                     )?;
 
                     writeln!(

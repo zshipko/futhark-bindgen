@@ -137,6 +137,7 @@ impl Context {{
 impl Drop for Context {{
     fn drop(&mut self) {{
         unsafe {{
+            futhark_context_sync(self.context);
             futhark_context_free(self.context);
             futhark_context_config_free(self.config);  
         }}    

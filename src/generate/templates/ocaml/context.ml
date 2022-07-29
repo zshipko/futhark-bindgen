@@ -4,6 +4,7 @@ module Context = struct
   type t = {{ handle: unit ptr; config: unit ptr; cache_file: string option }}
 
   let free t = 
+    ignore (Bindings.futhark_context_sync t.handle);
     ignore (Bindings.futhark_context_free t.handle);
     ignore (Bindings.futhark_context_config_free t.config)
 
