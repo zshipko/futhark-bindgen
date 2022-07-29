@@ -112,7 +112,11 @@ impl Library {
         let libs = self.manifest.backend.required_c_libs();
 
         for lib in libs {
-            println!("cargo:rustc-link-lib={}", lib);
+            if cfg!(target_os = "macos") && lib == &"OpenCL" {
+                println!("cargo:rustc-link-lib=framework={}", lib);
+            } else {
+                println!("cargo:rustc-link-lib={}", lib);
+            }
         }
     }
 }
