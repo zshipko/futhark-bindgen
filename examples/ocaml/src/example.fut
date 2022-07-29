@@ -34,3 +34,6 @@ entry option_get (x: option) : i64 =
 
 -- Check entry point with sum-type argument and return value
 entry return_option (x: option): option = x
+
+entry mul2 (a: [][]f64) : [][]f64 =
+  map (map (\b -> b * 2.0)) a

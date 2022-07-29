@@ -22,6 +22,9 @@ pub enum Backend {
     #[serde(rename = "multicore")]
     Multicore,
 
+    #[serde(rename = "ispc")]
+    ISPC,
+
     #[serde(rename = "python")]
     Python,
 
@@ -36,6 +39,7 @@ impl Backend {
             Backend::CUDA => "cuda",
             Backend::OpenCL => "opencl",
             Backend::Multicore => "multicore",
+            Backend::ISPC => "ispc",
             Backend::Python => "python",
             Backend::PyOpenCL => "pyopencl",
         }
@@ -45,6 +49,7 @@ impl Backend {
         match self {
             Backend::CUDA => &["cuda", "cudart", "nvrtc", "m"],
             Backend::OpenCL => &["OpenCL", "m"],
+            Backend::Multicore => &["pthread", "m"],
             _ => &[],
         }
     }
@@ -74,10 +79,35 @@ impl Library {
 
         let name = format!("futhark_generate_{project}");
 
-        cc::Build::new()
-            .flag("-Wno-unused-parameter")
-            .file(&self.c_file)
-            .compile(&name);
+        if self.manifest.backend == Backend::ISPC {
+            let kernels = self.c_file.with_extension("kernels.ispc");
+            let dest = kernels.with_extension("o");
+            std::process::Command::new("ispc")
+                .arg(&kernels)
+                .arg("-o")
+                .arg(&dest)
+                .arg("--pic")
+                .arg("--addressing=64")
+                .arg("--target=host")
+                .status()
+                .expect("Unable to run ispc");
+
+            cc::Build::new()
+                .file(&self.c_file)
+                .object(&dest)
+                .flag("-fPIC")
+                .flag("-pthread")
+                .flag("-lm")
+                .flag("-std=c99")
+                .shared_flag(true)
+                .warnings(false)
+                .compile(&name);
+        } else {
+            cc::Build::new()
+                .flag("-Wno-unused-parameter")
+                .file(&self.c_file)
+                .compile(&name);
+        }
         println!("cargo:rustc-link-lib={name}");
 
         let libs = self.manifest.backend.required_c_libs();

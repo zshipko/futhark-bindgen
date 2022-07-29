@@ -2,8 +2,8 @@ open Ctypes
 
 module Bindings = struct
   external _stub: unit -> unit = "futhark_context_new"
- 
-  let fn = Foreign.foreign 
+
+  let fn = Foreign.foreign ~release_runtime_lock:true
   let context = typedef (ptr void) "context"
   let context_config = typedef (ptr void) "context_config"
   let futhark_context_new = fn "futhark_context_new" (context_config @-> returning context)
@@ -22,18 +22,18 @@ module Bindings = struct
   let futhark_context_report = fn "futhark_context_report" (context @-> returning (ptr char))
   let free = fn "free" (ptr void @-> returning void)
   let strlen = fn "strlen" (ptr char @-> returning size_t)
-  
+
 {generated_foreign_functions}
 end
 
-type error = 
-  | InvalidShape of int * int 
-  | NullPtr 
+type error =
+  | InvalidShape of int * int
+  | NullPtr
   | Code of int
 
 exception Error of error
 
-let () = Printexc.register_printer (function 
+let () = Printexc.register_printer (function
   | Error (InvalidShape (a, b)) -> Some (Printf.sprintf "futhark error: invalid shape, expected %d but got %d" a b)
   | Error NullPtr -> Some "futhark error: null pointer"
   | Error (Code c) -> Some (Printf.sprintf "futhark error: code %d" c) | _ -> None)

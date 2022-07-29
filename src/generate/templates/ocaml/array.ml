@@ -24,7 +24,7 @@ module {module_name} = struct
     let rc = Bindings.futhark_values_{elemtype}_{rank}d t.ctx.Context.handle t.ptr (bigarray_start genarray ba) in
     if rc <> 0 then raise (Error (Code rc))
 
-  let to_bigarray t =
+  let get t =
     let dims = t.shape in
     let g = Genarray.create kind C_layout dims in
     values t g;

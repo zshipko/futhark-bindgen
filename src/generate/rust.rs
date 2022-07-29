@@ -14,7 +14,7 @@ fn type_is_opaque(a: &str) -> bool {
     a.contains("futhark_opaque_")
 }
 
-const RUST_TYPE_MAP: &[(&'static str, &'static str)] = &[];
+const RUST_TYPE_MAP: &[(&'static str, &'static str)] = &[("f16", "")];
 
 impl Default for Rust {
     fn default() -> Self {
@@ -79,10 +79,14 @@ impl Rust {
 
     fn get_type(typemap: &BTreeMap<String, String>, t: &str) -> String {
         let a = typemap.get(t);
-        match a {
+        let x = match a {
             Some(t) => t.clone(),
             None => t.to_string(),
+        };
+        if x == "" {
+            panic!("Unsupported type: {t}");
         }
+        x
     }
 
     fn generate_opaque_type(

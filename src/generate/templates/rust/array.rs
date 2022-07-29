@@ -37,7 +37,7 @@ impl<'a> {rust_type}<'a> {{
         }}
         let rc = unsafe {{
             futhark_context_sync(self.ctx);
-            futhark_values_{elemtype}_{rank}d(self.ctx, self.ptr as *mut _, data.as_mut_ptr())
+            futhark_values_{elemtype}_{rank}d(self.ctx, self.ptr, data.as_mut_ptr())
         }};
         if rc != 0 {{
             return Err(Error::Code(rc));
@@ -45,9 +45,9 @@ impl<'a> {rust_type}<'a> {{
         Ok(())
     }}
     
-    pub fn to_vec(&self) -> std::result::Result<Vec<{elemtype}>, Error> {{
-        let size = self.shape.iter().fold(1, |a, b| a * b);
-        let mut vec = vec![0 as {elemtype}; size.try_into().expect("Invalid size")];
+    pub fn get(&self) -> std::result::Result<Vec<{elemtype}>, Error> {{
+        let size = self.shape.iter().fold(1, |a, b| a as usize * *b as usize);
+        let mut vec = vec![0 as {elemtype}; size];
         self.values(&mut vec)?;
         Ok(vec)
     }}
@@ -70,6 +70,7 @@ impl<'a> {rust_type}<'a> {{
 impl<'a> Drop for {rust_type}<'a> {{
     fn drop(&mut self){{
         unsafe {{
+            futhark_context_sync(self.ctx);
             futhark_free_{elemtype}_{rank}d(self.ctx, self.ptr as *mut _);
         }}  
     }}

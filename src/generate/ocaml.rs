@@ -18,6 +18,7 @@ const OCAML_CTYPES_MAP: &[(&'static str, &'static str)] = &[
     ("u32", "uint32_t"),
     ("i64", "int64_t"),
     ("u64", "uint64_t"),
+    ("f16", ""),
     ("f32", "float"),
     ("f64", "double"),
 ];
@@ -31,6 +32,7 @@ const OCAML_TYPE_MAP: &[(&'static str, &'static str)] = &[
     ("i64", "int64"),
     ("u32", "int32"),
     ("u64", "int64"),
+    ("f16", ""),
     ("f32", "float"),
     ("f64", "float"),
 ];
@@ -43,6 +45,7 @@ const OCAML_BA_TYPE_MAP: &[(&'static str, &'static str)] = &[
     ("i64", "Bigarray.int64_elt"),
     ("u32", "Bigarray.int32_elt"),
     ("u64", "Bigarray.int64_elt"),
+    ("f16", ""),
     ("f32", "Bigarray.float32_elt"),
     ("f64", "Bigarray.float64_elt"),
 ];
@@ -99,21 +102,35 @@ impl OCaml {
     }
 
     fn get_ctype(&self, t: &str) -> String {
-        self.ctypes_map
+        let x = self
+            .ctypes_map
             .get(t)
             .cloned()
-            .unwrap_or_else(|| t.to_string())
+            .unwrap_or_else(|| t.to_string());
+        if x == "" {
+            panic!("Unsupported type: {t}");
+        }
+        x
     }
 
     fn get_type(&self, t: &str) -> String {
-        self.typemap
+        let x = self
+            .typemap
             .get(t)
             .cloned()
-            .unwrap_or_else(|| t.to_string())
+            .unwrap_or_else(|| t.to_string());
+        if x == "" {
+            panic!("Unsupported type: {t}");
+        }
+        x
     }
 
     fn get_ba_type(&self, t: &str) -> String {
-        self.ba_map.get(t).cloned().unwrap_or_else(|| t.to_string())
+        let x = self.ba_map.get(t).cloned().unwrap_or_else(|| t.to_string());
+        if x == "" {
+            panic!("Unsupported type: {t}");
+        }
+        x
     }
 }
 
@@ -494,13 +511,9 @@ impl Generate for OCaml {
                 };
 
                 if type_is_array(&t) {
-                    out_decl.push(format!(
-                        "    let out{i}_ptr = allocate_n (ptr void) ~count:1 in"
-                    ));
+                    out_decl.push(format!("    let out{i}_ptr = allocate (ptr void) null in"));
                 } else if type_is_opaque(&t) {
-                    out_decl.push(format!(
-                        "    let out{i}_ptr = allocate_n (ptr void) ~count:1 in"
-                    ));
+                    out_decl.push(format!("    let out{i}_ptr = allocate (ptr void) null in"));
                 } else {
                     out_decl.push(format!("    let out{i}_ptr = allocate_n {ct} ~count:1 in"));
                 }
