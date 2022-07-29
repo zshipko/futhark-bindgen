@@ -2,8 +2,8 @@
 
 A [Futhark](https://futhark-lang.org) binding generator.
 
-`futhark-bindgen` uses the [manifest](https://futhark.readthedocs.io/en/latest/c-api.html#manifest) creates when building a
-Futhark library to generate bindings for multiple languages.
+`futhark-bindgen` uses the [manifest](https://futhark.readthedocs.io/en/latest/c-api.html#manifest) created by Futhark 
+to generate bindings for multiple languages.
 
 Supported languages:
 
