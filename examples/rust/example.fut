@@ -2,12 +2,13 @@ type number = {x: f32}
 
 type~ tup = (number, []f32)
 
+-- Check struct argument with numeric return
 entry test (x: number) =
   x.x * 2
 
+-- Check tuple argument with array return value
 entry tup_mul (x: tup): []f32 =
   map (\a -> x.0.x * a) x.1
-
 
 entry binary_search [n] (xs: [n]i64) (x: i64) : i64 =
   let (l, _) =
@@ -19,14 +20,17 @@ entry binary_search [n] (xs: [n]i64) (x: i64) : i64 =
 
 type option = #some i64 | #none
 
+-- Check bool type
 entry is_none (x: option): bool =
   match x
   case #some _ -> false
   case #none -> true
 
+-- Check entry point with sum-type argument
 entry option_get (x: option) : i64 =
   match x
   case #some x -> x
-  case #none -> 0
+  case #none -> -1
 
-entry aaa (x: option): option = x
+-- Check entry point with sum-type argument and return value
+entry return_option (x: option): option = x
