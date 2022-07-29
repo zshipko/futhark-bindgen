@@ -1,8 +1,11 @@
 # futhark-bindgen
 
-A [futhark](https://futhark-lang.org) binding generator
+A [Futhark](https://futhark-lang.org) binding generator.
 
-Currently supported languages:
+`futhark-bindgen` uses the [manifest](https://futhark.readthedocs.io/en/latest/c-api.html#manifest) creates when building a
+Futhark library to generate bindings for multiple languages.
+
+Supported languages:
 
 - Rust
 - OCaml
