@@ -105,6 +105,7 @@ impl Library {
             cc::Build::new()
                 .flag("-Wno-unused-parameter")
                 .file(&self.c_file)
+                .warnings(false)
                 .compile(&name);
         }
         println!("cargo:rustc-link-lib={name}");

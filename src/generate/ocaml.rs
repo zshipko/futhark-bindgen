@@ -431,10 +431,10 @@ impl Generate for OCaml {
                         };
 
                         let out = if type_is_opaque(&t) {
-                            format!("of_raw t.opaque_ctx !@out")
+                            format!("of_ptr t.opaque_ctx !@out")
                         } else if type_is_array(&t) {
                             let array = first_uppercase(&t);
-                            format!("{array}.of_raw t.opaque_ctx !@out")
+                            format!("{array}.of_ptr t.opaque_ctx !@out")
                         } else {
                             format!("!@out")
                         };
@@ -550,11 +550,11 @@ impl Generate for OCaml {
 
                 if type_is_array(&t) {
                     let m = first_uppercase(&t);
-                    out_return.push(format!("({m}.of_raw ctx !@out{idx}_ptr)"));
+                    out_return.push(format!("({m}.of_ptr ctx !@out{idx}_ptr)"));
                 } else if type_is_opaque(&t) {
                     let m = first_uppercase(&t);
                     let m = m.strip_suffix(".t").unwrap_or(&m);
-                    out_return.push(format!("({m}.of_raw ctx !@out{idx}_ptr)"));
+                    out_return.push(format!("({m}.of_ptr ctx !@out{idx}_ptr)"));
                 } else {
                     out_return.push(format!("!@out{idx}_ptr"));
                 }

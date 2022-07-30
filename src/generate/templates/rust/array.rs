@@ -54,7 +54,7 @@ impl<'a> {rust_type}<'a> {{
     
     
     #[allow(unused)]
-    fn from_raw(ctx: *mut futhark_context, ptr: *mut {futhark_type}) -> Self {{
+    fn from_ptr(ctx: *mut futhark_context, ptr: *mut {futhark_type}) -> Self {{
         let len_ptr = unsafe {{ futhark_shape_{elemtype}_{rank}d(ctx, ptr) }};
         let mut shape = [0i64; {rank}];
         unsafe {{
@@ -89,13 +89,6 @@ extern "C" {{
         {new_dim_args}
     ) -> *mut {futhark_type};
 
-    fn futhark_new_raw_{elemtype}_{rank}d(
-        _: *mut futhark_context,
-        _: *mut u8,
-        offset: i64,
-        {new_dim_args}
-    ) -> *mut {futhark_type};
-
     fn futhark_free_{elemtype}_{rank}d(
         _: *mut futhark_context,
         _: *mut {futhark_type}
@@ -106,11 +99,4 @@ extern "C" {{
         _: *mut {futhark_type},
         _: *mut {elemtype}
     ) -> std::os::raw::c_int;
-
-    fn futhark_values_raw_{elemtype}_{rank}d(
-        _: *mut futhark_context,
-        _: *mut {futhark_type},
-        _: *mut u8,
-    ) -> std::os::raw::c_int;
-
 }}

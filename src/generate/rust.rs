@@ -157,12 +157,12 @@ impl Rust {
             // If the output type is an array or opaque type then we need to wrap the return value
             let (output, futhark_field_type) = if type_is_opaque(&a) {
                 (
-                    format!("Ok({t}::from_raw(self.ctx, out))"),
+                    format!("Ok({t}::from_ptr(self.ctx, out))"),
                     format!("*mut {a}"),
                 )
             } else if type_is_array(&t) {
                 (
-                    format!("Ok({t}::from_raw(self.ctx, out))"),
+                    format!("Ok({t}::from_ptr(self.ctx, out))"),
                     format!("*mut {a}"),
                 )
             } else {
@@ -251,9 +251,9 @@ impl Rust {
             let t = Self::get_type(&self.typemap, &a);
 
             if type_is_array(&t) {
-                entry_return.push(format!("{t}::from_raw(self.context, {name}.assume_init())",));
+                entry_return.push(format!("{t}::from_ptr(self.context, {name}.assume_init())",));
             } else if type_is_opaque(&a) {
-                entry_return.push(format!("{t}::from_raw(self.context, {name}.assume_init())",));
+                entry_return.push(format!("{t}::from_ptr(self.context, {name}.assume_init())",));
             } else {
                 entry_return.push(format!("{name}.assume_init()"));
             }

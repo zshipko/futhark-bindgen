@@ -19,7 +19,7 @@ pub struct {rust_type}<'a> {{
 
 impl<'a> {rust_type}<'a> {{
     #[allow(unused)]
-    fn from_raw(ctx: *mut futhark_context, data: *mut {futhark_type}) -> Self {{
+    fn from_ptr(ctx: *mut futhark_context, data: *mut {futhark_type}) -> Self {{
         Self {{ ctx, data, _t: std::marker::PhantomData }}
     }}
 }}
