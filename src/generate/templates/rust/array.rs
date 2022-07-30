@@ -12,8 +12,9 @@ pub struct {rust_type}<'a> {{
 }}
 
 impl<'a> {rust_type}<'a> {{
-    pub fn new(ctx: &'a Context, dims: [i64; {rank}], data: &[{elemtype}]) -> std::result::Result<Self, Error> {{
+    pub fn new(ctx: &'a Context, dims: [i64; {rank}], data: impl AsRef<[{elemtype}]>) -> std::result::Result<Self, Error> {{
         let size = dims.iter().fold(1, |a, b| a * b);
+        let data = data.as_ref();
         if data.len() as i64 != size {{
             return Err(Error::InvalidShape)
         }}
@@ -30,8 +31,9 @@ impl<'a> {rust_type}<'a> {{
         }})
     }}
     
-    pub fn values(&self, data: &mut[{elemtype}]) -> std::result::Result<(), Error> {{
+    pub fn values(&self, mut data: impl AsMut<[{elemtype}]>) -> std::result::Result<(), Error> {{
         let size = self.shape.iter().fold(1, |a, b| a * b);
+        let data = data.as_mut();
         if data.len() as i64 != size {{ 
             return Err(Error::InvalidShape);
         }}
