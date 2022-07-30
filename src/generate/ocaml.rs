@@ -467,9 +467,6 @@ impl Generate for OCaml {
             }
         }
 
-        writeln!(config.output_file, "module Entry = struct")?;
-        writeln!(mli_file, "module Entry: sig")?;
-
         for (name, entry) in &library.manifest.entry_points {
             let mut arg_types = Vec::new();
             let mut return_type = Vec::new();
@@ -511,11 +508,11 @@ impl Generate for OCaml {
                 };
 
                 if type_is_array(&t) {
-                    out_decl.push(format!("    let out{i}_ptr = allocate (ptr void) null in"));
+                    out_decl.push(format!("  let out{i}_ptr = allocate (ptr void) null in"));
                 } else if type_is_opaque(&t) {
-                    out_decl.push(format!("    let out{i}_ptr = allocate (ptr void) null in"));
+                    out_decl.push(format!("  let out{i}_ptr = allocate (ptr void) null in"));
                 } else {
-                    out_decl.push(format!("    let out{i}_ptr = allocate_n {ct} ~count:1 in"));
+                    out_decl.push(format!("  let out{i}_ptr = allocate_n {ct} ~count:1 in"));
                 }
             }
 
@@ -576,8 +573,6 @@ impl Generate for OCaml {
                 return_type = return_type.join(", "),
             )?;
         }
-        writeln!(config.output_file, "end")?;
-        writeln!(mli_file, "end")?;
 
         Ok(())
     }

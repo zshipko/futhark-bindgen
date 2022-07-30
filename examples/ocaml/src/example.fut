@@ -37,3 +37,7 @@ entry return_option (x: option): option = x
 
 entry mul2 (a: [][]f64) : [][]f64 =
   map (map (\b -> b * 2.0)) a
+
+
+entry sinking1 (as: []i32) (bs: []i32) (cs: []i32) (ds: []i32) (es: []i32) =
+  map5 (\a b c d e -> if a == 0 then 0 else b + c + d + e) as bs cs ds es
