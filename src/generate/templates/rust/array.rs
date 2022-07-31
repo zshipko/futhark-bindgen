@@ -7,8 +7,7 @@ struct {futhark_type} {{
 pub struct {rust_type}<'a> {{
     ptr: *mut {futhark_type},
     pub shape: [i64; {rank}],
-    ctx: *mut futhark_context,
-    _t: std::marker::PhantomData<&'a ()>,
+    ctx: &'a Context,
 }}
 
 impl<'a> {rust_type}<'a> {{
@@ -22,13 +21,16 @@ impl<'a> {rust_type}<'a> {{
             {new_fn}(ctx.context, data.as_ptr(), {dim_params})    
         }};
         if ptr.is_null() {{ return Err(Error::NullPtr); }}
-        ctx.sync();
+        ctx.auto_sync();
         Ok(Self {{
             ptr: ptr as *mut _,
             shape: dims,
-            ctx: ctx.context,
-            _t: std::marker::PhantomData,  
+            ctx,
         }})
+    }}
+    
+    pub fn shape(&self) -> &[i64; {rank}] {{
+        &self.shape
     }}
     
     pub fn values(&self, mut data: impl AsMut<[{elemtype}]>) -> std::result::Result<(), Error> {{
@@ -38,12 +40,12 @@ impl<'a> {rust_type}<'a> {{
             return Err(Error::InvalidShape);
         }}
         let rc = unsafe {{
-            futhark_context_sync(self.ctx);
-            futhark_values_{elemtype}_{rank}d(self.ctx, self.ptr, data.as_mut_ptr())
+            futhark_values_{elemtype}_{rank}d(self.ctx.context, self.ptr, data.as_mut_ptr())
         }};
         if rc != 0 {{
             return Err(Error::Code(rc));
         }}
+        self.ctx.auto_sync();
         Ok(())
     }}
     
@@ -56,15 +58,15 @@ impl<'a> {rust_type}<'a> {{
     
     
     #[allow(unused)]
-    fn from_ptr(ctx: *mut futhark_context, ptr: *mut {futhark_type}) -> Self {{
-        let len_ptr = unsafe {{ futhark_shape_{elemtype}_{rank}d(ctx, ptr) }};
+    fn from_ptr(ctx: &'a Context, ptr: *mut {futhark_type}) -> Self {{
+        let len_ptr = unsafe {{ futhark_shape_{elemtype}_{rank}d(ctx.context, ptr) }};
         let mut shape = [0i64; {rank}];
         unsafe {{
             for i in 0 .. {rank} {{
                 shape[i] = *len_ptr.add(i);    
             }}
         }}
-        Self {{ ctx, shape, ptr, _t: std::marker::PhantomData }}
+        Self {{ ctx, shape, ptr }}
     }}    
 }}
 
@@ -72,8 +74,7 @@ impl<'a> {rust_type}<'a> {{
 impl<'a> Drop for {rust_type}<'a> {{
     fn drop(&mut self){{
         unsafe {{
-            futhark_context_sync(self.ctx);
-            futhark_free_{elemtype}_{rank}d(self.ctx, self.ptr as *mut _);
+            futhark_free_{elemtype}_{rank}d(self.ctx.context, self.ptr as *mut _);
         }}  
     }}
 }}

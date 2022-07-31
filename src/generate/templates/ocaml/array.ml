@@ -11,7 +11,7 @@ module {module_name} = struct
     let dims = Genarray.dims ba in
     let ptr = Bindings.futhark_new_{elemtype}_{rank}d ctx.Context.handle (bigarray_start genarray ba) {dim_args} in
     if is_null ptr then raise (Error NullPtr);
-    Context.sync ctx;
+    Context.auto_sync ctx;
     let t = {{ ptr; ctx; shape = dims; }} in
     Gc.finalise free t; t
 
@@ -20,8 +20,8 @@ module {module_name} = struct
     let a = Array.fold_left ( * ) 1 t.shape in
     let b = Array.fold_left ( * ) 1 dims in
     if (a <> b) then raise (Error (InvalidShape (a, b)));
-    Context.sync t.ctx;
     let rc = Bindings.futhark_values_{elemtype}_{rank}d t.ctx.Context.handle t.ptr (bigarray_start genarray ba) in
+    Context.auto_sync t.ctx;
     if rc <> 0 then raise (Error (Code rc))
 
   let get t =

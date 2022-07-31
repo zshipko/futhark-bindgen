@@ -1,7 +1,7 @@
 open Bigarray
 
 module Context = struct
-  type t = {{ handle: unit ptr; config: unit ptr; cache_file: string option }}
+  type t = {{ handle: unit ptr; config: unit ptr; cache_file: string option; auto_sync: bool }}
 
   let free t = 
     ignore (Bindings.futhark_context_sync t.handle);
@@ -9,7 +9,7 @@ module Context = struct
     ignore (Bindings.futhark_context_config_free t.config)
 
 
-  let v ?(debug = false) ?(log = false) ?(profile = false) ?cache_file {extra_param} () =
+  let v ?(debug = false) ?(log = false) ?(profile = false) ?cache_file ?(auto_sync = true) {extra_param} () =
     let config = Bindings.futhark_context_config_new () in
     if is_null config then raise (Error NullPtr);
     Bindings.futhark_context_config_set_debugging config (if debug then 1 else 0);
@@ -19,12 +19,15 @@ module Context = struct
     Option.iter (Bindings.futhark_context_config_set_cache_file config) cache_file;
     let handle = Bindings.futhark_context_new config in
     if is_null handle then (ignore @@ Bindings.futhark_context_config_free config; raise (Error NullPtr));
-    let t = {{ handle; config; cache_file; }} in
+    let t = {{ handle; config; cache_file; auto_sync }} in
     Gc.finalise free t; t
 
   let sync t =
     let rc = Bindings.futhark_context_sync t.handle in
     if rc <> 0 then raise (Error (Code rc))
+
+  let auto_sync t =
+    if t.auto_sync then sync t
   
   let clear_caches t =
     let rc = Bindings.futhark_context_clear_caches t.handle in

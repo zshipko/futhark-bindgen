@@ -1,6 +1,6 @@
 module Context: sig
   type t
-  val v: ?debug:bool -> ?log:bool -> ?profile:bool -> ?cache_file:string -> {extra_mli} unit -> t
+  val v: ?debug:bool -> ?log:bool -> ?profile:bool -> ?cache_file:string -> ?auto_sync:bool -> {extra_mli} unit -> t
   val sync: t -> unit
   val free: t -> unit
   val clear_caches: t -> unit

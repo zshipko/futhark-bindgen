@@ -251,9 +251,9 @@ impl Rust {
             let t = Self::get_type(&self.typemap, &a);
 
             if type_is_array(&t) {
-                entry_return.push(format!("{t}::from_ptr(self.context, {name}.assume_init())",));
+                entry_return.push(format!("{t}::from_ptr(self, {name}.assume_init())",));
             } else if type_is_opaque(&a) {
-                entry_return.push(format!("{t}::from_ptr(self.context, {name}.assume_init())",));
+                entry_return.push(format!("{t}::from_ptr(self, {name}.assume_init())",));
             } else {
                 entry_return.push(format!("{name}.assume_init()"));
             }

@@ -13,32 +13,44 @@ pub struct Options {{
     num_threads: u32,
     cache_file: std::option::Option<std::ffi::CString>,
     device: std::option::Option<std::ffi::CString>,
+    auto_sync: bool,
 }}
 
 impl Options {{
+    /// Create new `Options` with default settings
     pub fn new() -> Self {{
         Self::default()
     }}
 
+    /// Enable debug
     pub fn debug(mut self) -> Self {{
         self.debug = true;
         self
     }}
 
+    /// Enable profiling
     pub fn profile(mut self) -> Self {{
         self.profile = true;
         self
     }}
 
+    /// Enable logging
     pub fn log(mut self) -> Self {{
         self.logging = true;
         self
     }}
 
+    /// Set Futhark cache file
     pub fn cache_file(mut self, s: impl AsRef<str>) -> Self {{
         self.cache_file = Some(std::ffi::CString::new(s.as_ref()).expect("Invalid cache file"));
         self
     }}
+
+    pub fn auto_sync(mut self, sync: bool) -> Self {{
+        self.auto_sync = sync;
+        self    
+    }}
+
     
     {backend_options}
 }}
@@ -46,6 +58,7 @@ impl Options {{
 pub struct Context {{
     config: *mut futhark_context_config,
     context: *mut futhark_context,
+    auto_sync: bool,
     _cache_file: std::option::Option<std::ffi::CString>,
 }}
 
@@ -59,7 +72,7 @@ impl Context {{
                 futhark_context_config_free(config);
                 return Err(Error::NullPtr);
             }}
-            Ok(Context {{ config, context, _cache_file: None }})
+            Ok(Context {{ config, context, auto_sync: true, _cache_file: None }})
         }}
     }}
     
@@ -84,12 +97,18 @@ impl Context {{
                 futhark_context_config_free(config);
                 return Err(Error::NullPtr);
             }}
-            Ok(Context {{ config, context, _cache_file: options.cache_file }})
+            Ok(Context {{ config, context, auto_sync: options.auto_sync, _cache_file: options.cache_file }})
         }}
     }}
     
     pub fn sync(&self) {{
         unsafe {{ futhark_context_sync(self.context); }}  
+    }}
+    
+    pub fn auto_sync(&self) {{
+        if self.auto_sync {{
+            self.sync();    
+        }}    
     }}
     
     pub fn clear_caches(&self) -> std::result::Result<(), Error> {{

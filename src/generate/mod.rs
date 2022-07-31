@@ -25,6 +25,7 @@ pub(crate) fn first_uppercase(s: &str) -> String {
 pub struct Config {
     pub output_path: std::path::PathBuf,
     pub output_file: std::fs::File,
+    pub auto_sync: bool,
 }
 
 impl Config {
@@ -32,7 +33,13 @@ impl Config {
         Ok(Config {
             output_path: output.as_ref().to_path_buf(),
             output_file: std::fs::File::create(output)?,
+            auto_sync: true,
         })
+    }
+
+    pub fn no_auto_sync(mut self) -> Self {
+        self.auto_sync = false;
+        self
     }
 }
 

@@ -1,9 +1,10 @@
 impl<'a> {rust_type}<'a> {{
     pub fn get_{field_name}(&self) -> Result<{rust_field_type}, Error> {{
+        self.ctx.auto_sync();    
         let mut out = std::mem::MaybeUninit::zeroed();
         let rc = unsafe {{
             futhark_project_opaque_{name}_{field_name}(
-                self.ctx,
+                self.ctx.context,
                 out.as_mut_ptr(),
                 self.data
             )
