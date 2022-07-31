@@ -81,7 +81,7 @@ impl<'a> Drop for {rust_type}<'a> {{
 
 #[allow(unused)]
 extern "C" {{
-    fn futhark_shape_{elemtype}_{rank}d(
+    fn {shape_fn}(
         _: *mut futhark_context,
         _: *mut {futhark_type}
     ) -> *const i64;
@@ -92,12 +92,12 @@ extern "C" {{
         {new_dim_args}
     ) -> *mut {futhark_type};
 
-    fn futhark_free_{elemtype}_{rank}d(
+    fn {free_fn}(
         _: *mut futhark_context,
         _: *mut {futhark_type}
     ) -> std::os::raw::c_int;
 
-    fn futhark_values_{elemtype}_{rank}d(
+    fn {values_fn}(
         _: *mut futhark_context,
         _: *mut {futhark_type},
         _: *mut {elemtype}

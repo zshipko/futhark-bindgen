@@ -16,7 +16,7 @@ impl<'a> {rust_type}<'a> {{
 }}
 
 extern "C" {{
-    fn futhark_project_opaque_{name}_{field_name}(
+    fn {project_fn}(
         _: *mut futhark_context,
         _: *mut {futhark_field_type},
         _: *const {futhark_type}

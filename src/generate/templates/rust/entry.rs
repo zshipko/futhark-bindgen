@@ -13,7 +13,7 @@ impl Context {{
 }}
 
 extern "C" {{
-    fn futhark_entry_{entry_name}(
+    fn {entry_fn}(
         _: *mut futhark_context,
         {futhark_entry_params}
     ) -> std::os::raw::c_int;

@@ -186,32 +186,24 @@ impl Generate for OCaml {
                     }
                     generated_foreign_functions.push(format!(
                         "  {}",
-                        self.foreign_function(
-                            &format!("futhark_new_{elemtype}_{rank}d"),
-                            &ocaml_name,
-                            new_args
-                        )
+                        self.foreign_function(&a.ops.new, &ocaml_name, new_args)
                     ));
                     generated_foreign_functions.push(format!(
                         "  {}",
                         self.foreign_function(
-                            &format!("futhark_values_{elemtype}_{rank}d"),
+                            &a.ops.values,
                             "int",
                             vec!["context", &ocaml_name, &elem_ptr]
                         )
                     ));
                     generated_foreign_functions.push(format!(
                         "  {}",
-                        self.foreign_function(
-                            &format!("futhark_free_{elemtype}_{rank}d"),
-                            "int",
-                            vec!["context", &ocaml_name]
-                        )
+                        self.foreign_function(&a.ops.free, "int", vec!["context", &ocaml_name])
                     ));
                     generated_foreign_functions.push(format!(
                         "  {}",
                         self.foreign_function(
-                            &format!("futhark_shape_{elemtype}_{rank}d"),
+                            &a.ops.shape,
                             "ptr int64_t",
                             vec!["context", &ocaml_name]
                         )

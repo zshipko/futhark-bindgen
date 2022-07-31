@@ -56,7 +56,6 @@ impl Rust {
             dim_params.push(dim);
         }
 
-        let new_fn = format!("futhark_new_{elemtype}_{rank}d");
         let mut new_dim_args = Vec::new();
         for i in 0..a.rank {
             new_dim_args.push(format!("dim{i}: i64"));
@@ -69,7 +68,10 @@ impl Rust {
             rust_type = info.rust_type,
             rank = a.rank,
             elemtype = info.elem,
-            new_fn = new_fn,
+            new_fn = a.ops.new,
+            free_fn = a.ops.free,
+            values_fn = a.ops.values,
+            shape_fn = a.ops.shape,
             dim_params = dim_params.join(", "),
             new_dim_args = new_dim_args.join(", ")
         )?;
@@ -143,6 +145,7 @@ impl Rust {
             include_str!("templates/rust/record.rs"),
             rust_type = rust_type,
             futhark_type = futhark_type,
+            new_fn = record.new,
             new_params = new_params.join(", "),
             new_call_args = new_call_args.join(", "),
             new_extern_params = new_extern_params.join(", "),
@@ -172,6 +175,7 @@ impl Rust {
             writeln!(
                 config.output_file,
                 include_str!("templates/rust/record_project.rs"),
+                project_fn = field.project,
                 rust_type = rust_type,
                 futhark_type = futhark_type,
                 field_name = field.name,
@@ -271,6 +275,7 @@ impl Rust {
         writeln!(
             config.output_file,
             include_str!("templates/rust/entry.rs"),
+            entry_fn = entry.cfun,
             entry_name = name,
             entry_params = entry_params.join(", "),
             entry_return_type = entry_return_type,
