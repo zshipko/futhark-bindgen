@@ -1,11 +1,15 @@
 pub(crate) use std::collections::BTreeMap;
 
+mod compiler;
 mod error;
 pub(crate) mod generate;
+mod library;
 pub mod manifest;
 
+pub use compiler::Compiler;
 pub use error::Error;
 pub use generate::{Config, Generate, OCaml, Rust};
+pub use library::Library;
 pub use manifest::Manifest;
 
 #[derive(Debug, serde::Deserialize, PartialEq, Clone, Copy)]
@@ -55,81 +59,22 @@ impl Backend {
     }
 }
 
-#[derive(Debug, Clone)]
-pub struct Compiler {
-    exe: String,
-    backend: Backend,
-    src: std::path::PathBuf,
-    extra_args: Vec<String>,
-    output_dir: std::path::PathBuf,
-}
-
-#[derive(Debug, Clone)]
-pub struct Library {
-    pub manifest: Manifest,
-    pub c_file: std::path::PathBuf,
-    pub h_file: std::path::PathBuf,
-    pub src: std::path::PathBuf,
-}
-
-impl Library {
-    #[cfg(feature = "build")]
-    pub fn link(&self) {
-        let project = std::env::var("CARGO_PKG_NAME").unwrap();
-
-        let name = format!("futhark_generate_{project}");
-
-        if self.manifest.backend == Backend::ISPC {
-            let kernels = self.c_file.with_extension("kernels.ispc");
-            let dest = kernels.with_extension("o");
-            std::process::Command::new("ispc")
-                .arg(&kernels)
-                .arg("-o")
-                .arg(&dest)
-                .arg("--pic")
-                .arg("--addressing=64")
-                .arg("--target=host")
-                .status()
-                .expect("Unable to run ispc");
-
-            cc::Build::new()
-                .file(&self.c_file)
-                .object(&dest)
-                .flag("-fPIC")
-                .flag("-pthread")
-                .flag("-lm")
-                .flag("-std=c99")
-                .warnings(false)
-                .compile(&name);
-        } else {
-            cc::Build::new()
-                .flag("-Wno-unused-parameter")
-                .file(&self.c_file)
-                .warnings(false)
-                .compile(&name);
-        }
-        println!("cargo:rustc-link-lib={name}");
-
-        let libs = self.manifest.backend.required_c_libs();
-
-        for lib in libs {
-            if cfg!(target_os = "macos") && lib == &"OpenCL" {
-                println!("cargo:rustc-link-lib=framework={}", lib);
-            } else {
-                println!("cargo:rustc-link-lib={}", lib);
-            }
-        }
-    }
-}
-
 #[cfg(feature = "build")]
+/// Generate the bindings and link the Futhark C code
+///
+/// `backend` selects the backend to use when generating C code: `futhark $backend --lib`
+///
+/// `src` is the full path to your Futhark code
+///
+/// `dest` is expected to be a relative path that will
+// be appended to `$OUT_DIR`
 pub fn build(
     backend: Backend,
     src: impl AsRef<std::path::Path>,
     dest: impl AsRef<std::path::Path>,
 ) {
     let out = std::path::PathBuf::from(std::env::var("OUT_DIR").unwrap());
-    println!("{:?}", out);
+    let dest = std::path::PathBuf::from(&out).join(dest);
     let lib = Compiler::new(backend, src)
         .with_output_dir(out)
         .compile()
@@ -142,80 +87,4 @@ pub fn build(
     gen.generate(&lib, &mut config)
         .expect("Code generation failed");
     lib.link();
-}
-
-#[cfg(feature = "build")]
-pub fn build_in_out_dir(
-    backend: Backend,
-    src: impl AsRef<std::path::Path>,
-    dest: impl AsRef<std::path::Path>,
-) {
-    let dest = std::path::PathBuf::from(std::env::var("OUT_DIR").unwrap()).join(dest);
-    build(backend, src, dest)
-}
-
-impl Compiler {
-    pub fn new(backend: Backend, src: impl AsRef<std::path::Path>) -> Compiler {
-        Compiler {
-            exe: String::from("futhark"),
-            src: src.as_ref().to_path_buf(),
-            extra_args: Vec::new(),
-            output_dir: src
-                .as_ref()
-                .canonicalize()
-                .unwrap()
-                .parent()
-                .unwrap()
-                .to_path_buf(),
-            backend,
-        }
-    }
-
-    pub fn with_executable_name(mut self, name: impl AsRef<str>) -> Self {
-        self.exe = name.as_ref().into();
-        self
-    }
-
-    pub fn with_extra_args(mut self, args: Vec<String>) -> Self {
-        self.extra_args = args;
-        self
-    }
-
-    pub fn with_output_dir(mut self, dir: impl AsRef<std::path::Path>) -> Self {
-        self.output_dir = dir.as_ref().to_path_buf();
-        self
-    }
-
-    pub fn compile(&self) -> Result<Option<Library>, Error> {
-        let output = &self
-            .output_dir
-            .join(self.src.with_extension("").file_name().unwrap());
-        let ok = std::process::Command::new(&self.exe)
-            .arg(self.backend.to_str())
-            .args(&self.extra_args)
-            .args(&["-o", &output.to_string_lossy()])
-            .arg("--lib")
-            .arg(&self.src)
-            .status()?
-            .success();
-
-        if !ok {
-            return Err(Error::CompilationFailed);
-        }
-
-        match &self.backend {
-            Backend::Python | Backend::PyOpenCL => return Ok(None),
-            _ => (),
-        }
-
-        let manifest = Manifest::parse_file(output.with_extension("json"))?;
-        let c_file = output.with_extension("c");
-        let h_file = output.with_extension("h");
-        Ok(Some(Library {
-            manifest,
-            c_file,
-            h_file,
-            src: self.src.clone(),
-        }))
-    }
 }

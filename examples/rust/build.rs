@@ -1,5 +1,3 @@
-use futhark_bindgen::{build_in_out_dir, Backend};
-
 fn main() {
-    build_in_out_dir(Backend::C, "example.fut", "example.rs")
+    futhark_bindgen::build(futhark_bindgen::Backend::C, "example.fut", "example.rs")
 }

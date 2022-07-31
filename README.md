@@ -10,7 +10,21 @@ Supported languages:
 - Rust
 - OCaml
 
-## Command-line
+## Installation
+
+With `cargo`:
+
+```
+$ cargo install futhark-bindgen
+```
+
+From source:
+
+```
+$ make install PREFIX=~/.local/bin
+```
+
+## Command-line usage
 
 ```
 $ futhark-bindgen run test.fut test.rs # Rust output
