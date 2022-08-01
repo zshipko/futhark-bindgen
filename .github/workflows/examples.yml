@@ -41,7 +41,7 @@ jobs:
     - name: Use OCaml ${{ matrix.ocaml-compiler }}
       uses: avsm/setup-ocaml@v2
       with:
-        ocaml-compiler: ${{ matrix.ocaml-compiler }
+        ocaml-compiler: ${{ matrix.ocaml-compiler }}
 
     - name: Install deps
       run: curl https://futhark-lang.org/releases/futhark-nightly-linux-x86_64.tar.xz | tar xz

@@ -9,7 +9,7 @@ pub struct OCaml {
     ba_map: BTreeMap<String, String>,
 }
 
-const OCAML_CTYPES_MAP: &[(&'static str, &'static str)] = &[
+const OCAML_CTYPES_MAP: &[(&str, &str)] = &[
     ("i8", "int8_t"),
     ("u8", "uint8_t"),
     ("i16", "int16_t"),
@@ -23,7 +23,7 @@ const OCAML_CTYPES_MAP: &[(&'static str, &'static str)] = &[
     ("f64", "double"),
 ];
 
-const OCAML_TYPE_MAP: &[(&'static str, &'static str)] = &[
+const OCAML_TYPE_MAP: &[(&str, &str)] = &[
     ("i8", "int"),
     ("u8", "int"),
     ("i16", "int"),
@@ -36,7 +36,7 @@ const OCAML_TYPE_MAP: &[(&'static str, &'static str)] = &[
     ("f32", "float"),
     ("f64", "float"),
 ];
-const OCAML_BA_TYPE_MAP: &[(&'static str, &'static str)] = &[
+const OCAML_BA_TYPE_MAP: &[(&str, &str)] = &[
     ("i8", "Bigarray.int8_signed_elt"),
     ("u8", "Bigarray.int8_unsigned_elt"),
     ("i16", "Bigarray.int16_signed_elt"),
@@ -107,7 +107,7 @@ impl OCaml {
             .get(t)
             .cloned()
             .unwrap_or_else(|| t.to_string());
-        if x == "" {
+        if x.is_empty() {
             panic!("Unsupported type: {t}");
         }
         x
@@ -119,7 +119,7 @@ impl OCaml {
             .get(t)
             .cloned()
             .unwrap_or_else(|| t.to_string());
-        if x == "" {
+        if x.is_empty() {
             panic!("Unsupported type: {t}");
         }
         x
@@ -127,7 +127,7 @@ impl OCaml {
 
     fn get_ba_type(&self, t: &str) -> String {
         let x = self.ba_map.get(t).cloned().unwrap_or_else(|| t.to_string());
-        if x == "" {
+        if x.is_empty() {
             panic!("Unsupported type: {t}");
         }
         x
@@ -181,9 +181,7 @@ impl Generate for OCaml {
                         "  let {ocaml_name} = typedef (ptr void) \"array_{elemtype}_{rank}d\""
                     ));
                     let mut new_args = vec!["context", &elem_ptr];
-                    for _ in 0..rank {
-                        new_args.push("int64_t");
-                    }
+                    new_args.resize(rank as usize + 2, "int64_t");
                     generated_foreign_functions.push(format!(
                         "  {}",
                         self.foreign_function(&a.ops.new, &ocaml_name, new_args)
@@ -257,7 +255,7 @@ impl Generate for OCaml {
             }
         }
 
-        for (_name, entry) in &library.manifest.entry_points {
+        for entry in library.manifest.entry_points.values() {
             let mut args = vec!["context".to_string()];
 
             for out in &entry.outputs {
@@ -321,7 +319,7 @@ impl Generate for OCaml {
                     let rank = a.rank;
                     let elemtype = a.elemtype.to_str().to_string();
                     let ocaml_name = self.typemap.get(name).unwrap();
-                    let module_name = first_uppercase(&ocaml_name);
+                    let module_name = first_uppercase(ocaml_name);
                     let mut dim_args = Vec::new();
                     for i in 0..rank {
                         dim_args.push(format!("(Int64.of_int dims.({i}))"));
@@ -390,10 +388,10 @@ impl Generate for OCaml {
                             new_arg_types.push(format!("{}.t", first_uppercase(&t)));
                         } else if type_is_opaque(&t) {
                             new_call_args.push(format!("field{}.opaque_ptr", f.name));
-                            new_arg_types.push(format!("{t}"));
+                            new_arg_types.push(t.to_string());
                         } else {
                             new_call_args.push(format!("field{}", f.name));
-                            new_arg_types.push(format!("{t}"));
+                            new_arg_types.push(t.to_string());
                         }
                     }
 
@@ -423,18 +421,19 @@ impl Generate for OCaml {
                         };
 
                         let out = if type_is_opaque(&t) {
-                            format!("of_ptr t.opaque_ctx !@out")
+                            let call = t.replace(".t", ".of_ptr");
+                            format!("{call} t.opaque_ctx !@out")
                         } else if type_is_array(&t) {
                             let array = first_uppercase(&t);
                             format!("{array}.of_ptr t.opaque_ctx !@out")
                         } else {
-                            format!("!@out")
+                            "!@out".to_string()
                         };
 
                         let out_type = if type_is_array(&t) {
                             format!("{}.t", first_uppercase(&t))
                         } else {
-                            format!("{t}")
+                            t.to_string()
                         };
 
                         writeln!(
@@ -499,9 +498,7 @@ impl Generate for OCaml {
                     format!("{i}")
                 };
 
-                if type_is_array(&t) {
-                    out_decl.push(format!("  let out{i}_ptr = allocate (ptr void) null in"));
-                } else if type_is_opaque(&t) {
+                if type_is_array(&t) || type_is_opaque(&t) {
                     out_decl.push(format!("  let out{i}_ptr = allocate (ptr void) null in"));
                 } else {
                     out_decl.push(format!("  let out{i}_ptr = allocate_n {ct} ~count:1 in"));
