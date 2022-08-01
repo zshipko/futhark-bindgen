@@ -7,34 +7,12 @@ on:
     branches: [ main ]
 
 jobs:
-  rust-linux:
-    runs-on: ubuntu-latest
-    steps:
-    - uses: actions/checkout@v2
-
-    - name: Install deps
-      run: curl https://futhark-lang.org/releases/futhark-nightly-linux-x86_64.tar.xz | tar xJ
-    
-    - name: Rust example
-      run: cd examples/rust && PATH="$PATH:../../futhark-nightly-linux-x86_64/bin" cargo test --verbose
-
-  rust-macos:
-    runs-on: macos-latest
-    steps:
-    - uses: actions/checkout@v2
-
-    - name: Install deps
-      run: brew update && brew install futhark
-
-    - name: Rust example
-      run: cd examples/rust && cargo test --verbose --all
-
-  ocaml-linux:
+  linux:
     strategy:
       fail-fast: true
       matrix:
         os: [ubuntu-latest]
-        ocaml-compiler: ["4.14.0", "4.13.1"]
+        ocaml-compiler: ["4.14.0"]
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v2
@@ -55,14 +33,14 @@ jobs:
     - run: opam install dune ctypes-foreign
 
     - name: Rust example
-      run: cd examples/ocaml && PATH="$PATH:../../futhark-nightly-linux-x86_64/bin" opam exec -- dune runtest
+      run: PATH="$PATH:$PWD/futhark-nightly-linux-x86_64/bin" opam exec -- make test
 
-  ocaml-macos:
+  macos:
     strategy:
       fail-fast: true
       matrix:
         os: [macos-latest]
-        ocaml-compiler: ["4.14.0", "4.13.1"]
+        ocaml-compiler: ["4.14.0"]
     runs-on: macos-latest
     steps:
     - uses: actions/checkout@v2
@@ -86,4 +64,4 @@ jobs:
     - run: opam install dune ctypes-foreign
 
     - name: OCaml exmaple
-      run: cd examples/ocaml && opam exec -- dune runtest
+      run: opam exec -- make test
