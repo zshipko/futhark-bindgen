@@ -13,7 +13,7 @@ jobs:
     - uses: actions/checkout@v2
 
     - name: Install deps
-      run: curl https://futhark-lang.org/releases/futhark-nightly-linux-x86_64.tar.xz | tar xz
+      run: curl https://futhark-lang.org/releases/futhark-nightly-linux-x86_64.tar.xz | tar xJ
     
     - name: Rust example
       run: cd examples/rust && PATH="$PATH:../../futhark-nightly-linux-x86_64/bin" cargo test --verbose
@@ -44,7 +44,7 @@ jobs:
         ocaml-compiler: ${{ matrix.ocaml-compiler }}
 
     - name: Install deps
-      run: curl https://futhark-lang.org/releases/futhark-nightly-linux-x86_64.tar.xz | tar xz
+      run: curl https://futhark-lang.org/releases/futhark-nightly-linux-x86_64.tar.xz | tar xJ
 
     - name: Set Opam env
       run: opam env | tr '\n' ' ' >> $GITHUB_ENV
