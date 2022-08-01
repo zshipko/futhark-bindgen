@@ -1,5 +1,9 @@
 # futhark-bindgen
 
+<a href="https://crates.io/crates/futhark-bindgen">
+    <img src="https://img.shields.io/crates/v/futhark-bindgen.svg">
+</a>
+
 A [Futhark](https://futhark-lang.org) binding generator.
 
 `futhark-bindgen` uses the [manifest](https://futhark.readthedocs.io/en/latest/c-api.html#manifest) created by Futhark 
