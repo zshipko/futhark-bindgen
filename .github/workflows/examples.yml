@@ -32,7 +32,7 @@ jobs:
 
     - run: opam install dune ctypes-foreign
 
-    - name: Rust example
+    - name: Run examples
       run: PATH="$PATH:$PWD/futhark-nightly-linux-x86_64/bin" opam exec -- make test
 
   macos:
@@ -52,9 +52,6 @@ jobs:
     - name: Install deps
       run: brew update && brew install futhark
 
-    - name: Run tests
-      run: cd examples/rust && cargo test --verbose --all
-
     - name: Set Opam env
       run: opam env | tr '\n' ' ' >> $GITHUB_ENV
 
@@ -63,5 +60,5 @@ jobs:
 
     - run: opam install dune ctypes-foreign
 
-    - name: OCaml exmaple
+    - name: Run examples
       run: opam exec -- make test
