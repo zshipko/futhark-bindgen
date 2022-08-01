@@ -12,7 +12,7 @@ pub use generate::{Config, Generate, OCaml, Rust};
 pub use library::Library;
 pub use manifest::Manifest;
 
-#[derive(Debug, serde::Deserialize, PartialEq, Clone, Copy)]
+#[derive(Debug, serde::Deserialize, PartialEq, Eq, Clone, Copy)]
 pub enum Backend {
     #[serde(rename = "c")]
     C,

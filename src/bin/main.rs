@@ -77,13 +77,7 @@ fn main() -> Result<(), Error> {
             if args.output.is_relative() {
                 args.output = std::path::PathBuf::from(".").join(args.output);
             }
-            let out_dir = args
-                .output
-                .parent()
-                .unwrap()
-                .canonicalize()
-                .unwrap()
-                .to_path_buf();
+            let out_dir = args.output.parent().unwrap().canonicalize().unwrap();
             let mut compiler = Compiler::new(args.backend, &args.input)
                 .with_extra_args(args.futhark_args)
                 .with_output_dir(out_dir);
@@ -110,7 +104,7 @@ fn main() -> Result<(), Error> {
                 .required_c_libs()
                 .iter()
                 .for_each(|x| print!("-l{x} "));
-            println!("");
+            println!();
         }
     }
 

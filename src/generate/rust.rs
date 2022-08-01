@@ -14,7 +14,7 @@ fn type_is_opaque(a: &str) -> bool {
     a.contains("futhark_opaque_")
 }
 
-const RUST_TYPE_MAP: &[(&'static str, &'static str)] = &[("f16", "")];
+const RUST_TYPE_MAP: &[(&str, &str)] = &[("f16", "")];
 
 impl Default for Rust {
     fn default() -> Self {
@@ -85,7 +85,7 @@ impl Rust {
             Some(t) => t.clone(),
             None => t.to_string(),
         };
-        if x == "" {
+        if x.is_empty() {
             panic!("Unsupported type: {t}");
         }
         x
@@ -98,7 +98,7 @@ impl Rust {
         config: &mut Config,
     ) -> Result<String, Error> {
         let futhark_type = format!("futhark_opaque_{name}");
-        let rust_type = format!("{}", first_uppercase(name));
+        let rust_type = first_uppercase(name);
 
         writeln!(
             config.output_file,
@@ -120,8 +120,8 @@ impl Rust {
             let a = Self::get_type(&self.typemap, &field.r#type);
             let t = Self::get_type(&self.typemap, &a);
 
-            let u = if &t == &field.r#type {
-                format!("{t}")
+            let u = if t == field.r#type {
+                t.to_string()
             } else {
                 format!("&{t}")
             };
@@ -158,12 +158,7 @@ impl Rust {
             let t = Self::get_type(&self.typemap, &a);
 
             // If the output type is an array or opaque type then we need to wrap the return value
-            let (output, futhark_field_type) = if type_is_opaque(&a) {
-                (
-                    format!("Ok({t}::from_ptr(self.ctx, out))"),
-                    format!("*mut {a}"),
-                )
-            } else if type_is_array(&t) {
+            let (output, futhark_field_type) = if type_is_opaque(&a) || type_is_array(&t) {
                 (
                     format!("Ok({t}::from_ptr(self.ctx, out))"),
                     format!("*mut {a}"),
@@ -210,9 +205,7 @@ impl Rust {
 
             let t = Self::get_type(&self.typemap, &a);
 
-            if type_is_array(&t) {
-                futhark_entry_params.push(format!("{name}: *mut *mut {a}"));
-            } else if type_is_opaque(&a) {
+            if type_is_array(&t) || type_is_opaque(&a) {
                 futhark_entry_params.push(format!("{name}: *mut *mut {a}"));
             } else {
                 futhark_entry_params.push(format!("{name}: *mut {a}"));
@@ -254,9 +247,7 @@ impl Rust {
 
             let t = Self::get_type(&self.typemap, &a);
 
-            if type_is_array(&t) {
-                entry_return.push(format!("{t}::from_ptr(self, {name}.assume_init())",));
-            } else if type_is_opaque(&a) {
+            if type_is_array(&t) || type_is_opaque(&a) {
                 entry_return.push(format!("{t}::from_ptr(self, {name}.assume_init())",));
             } else {
                 entry_return.push(format!("{name}.assume_init()"));
@@ -355,7 +346,7 @@ impl Generate for Rust {
         }
 
         for (name, entry) in &library.manifest.entry_points {
-            self.generate_entry_function(&name, entry, config)?;
+            self.generate_entry_function(name, entry, config)?;
         }
 
         let _ = std::process::Command::new("rustfmt")
