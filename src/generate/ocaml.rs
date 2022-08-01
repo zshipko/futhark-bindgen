@@ -96,7 +96,7 @@ impl Default for OCaml {
 impl OCaml {
     fn foreign_function(&mut self, name: &str, ret: &str, args: Vec<&str>) -> String {
         format!(
-            "let {name} = Foreign.foreign \"{name}\" ({} @-> returning ({ret}))",
+            "let {name} = fn \"{name}\" ({} @-> returning ({ret}))",
             args.join(" @-> ")
         )
     }
