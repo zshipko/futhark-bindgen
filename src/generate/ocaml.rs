@@ -435,35 +435,32 @@ impl Generate for OCaml {
                         let name = &f.name;
                         let project = &f.project;
 
-                        let out = if type_is_opaque(&t) {
+                        let (out, out_type) = if type_is_opaque(&t) {
                             let call = t.replace(".t", ".of_ptr");
-                            format!("{call} t.opaque_ctx !@out")
+                            (format!("{call} t.opaque_ctx !@out"), t.to_string())
                         } else if type_is_array(&t) {
                             let array = first_uppercase(&t);
-                            format!("{array}.of_ptr t.opaque_ctx !@out")
+                            (
+                                format!("{array}.of_ptr t.opaque_ctx !@out"),
+                                format!("{}.t", first_uppercase(&t)),
+                            )
                         } else {
-                            "!@out".to_string()
+                            ("!@out".to_string(), t.to_string())
                         };
 
-                        let out_type = if type_is_array(&t) {
-                            format!("{}.t", first_uppercase(&t))
-                        } else {
-                            t.to_string()
-                        };
-
-                        let s = if type_is_array(&t) {
+                        let alloc_type = if type_is_array(&t) {
                             format!("Bindings.{t}")
-                        } else if !t.ends_with(".t") {
-                            self.get_ctype(&f.r#type)
-                        } else {
+                        } else if type_is_opaque(&t) {
                             t
+                        } else {
+                            self.get_ctype(&f.r#type)
                         };
 
                         writeln!(
                             config.output_file,
                             include_str!("templates/ocaml/record_project.ml"),
                             name = name,
-                            s = s,
+                            s = alloc_type,
                             project = project,
                             out = out
                         )?;
