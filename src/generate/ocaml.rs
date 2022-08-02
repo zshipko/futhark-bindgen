@@ -242,18 +242,8 @@ impl Generate for OCaml {
                             .get(&f.r#type)
                             .cloned()
                             .unwrap_or_else(|| f.r#type.clone());
-                        args.push(cty);
-                    }
-                    let args = args.iter().map(|x| x.as_str()).collect();
-                    generated_foreign_functions
-                        .push(format!("  {}", self.foreign_function(new_fn, "int", args)));
 
-                    for f in record.fields.iter() {
-                        let cty = self
-                            .ctypes_map
-                            .get(&f.r#type)
-                            .cloned()
-                            .unwrap_or_else(|| f.r#type.clone());
+                        // project function
                         generated_foreign_functions.push(format!(
                             "  {}",
                             self.foreign_function(
@@ -262,7 +252,12 @@ impl Generate for OCaml {
                                 vec!["context", &format!("ptr {cty}"), &ocaml_name]
                             )
                         ));
+
+                        args.push(cty);
                     }
+                    let args = args.iter().map(|x| x.as_str()).collect();
+                    generated_foreign_functions
+                        .push(format!("  {}", self.foreign_function(new_fn, "int", args)));
                 }
             }
         }
@@ -523,7 +518,7 @@ impl Generate for OCaml {
             let i = if entry.outputs.len() == 1 {
                 String::new()
             } else {
-                format!("{i}")
+                i.to_string()
             };
 
             if type_is_array(&t) || type_is_opaque(&t) {
@@ -532,11 +527,6 @@ impl Generate for OCaml {
                 out_decl.push(format!("  let out{i}_ptr = allocate_n {ct} ~count:1 in"));
             }
 
-            let i = if entry.outputs.len() == 1 {
-                String::new()
-            } else {
-                i.to_string()
-            };
             call_args.push(format!("out{i}_ptr"));
 
             if type_is_array(&t) {

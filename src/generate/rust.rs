@@ -67,13 +67,11 @@ impl Generate for Rust {
         };
 
         let mut dim_params = Vec::new();
+        let mut new_dim_args = Vec::new();
+
         for i in 0..a.rank {
             let dim = format!("dims[{i}]");
             dim_params.push(dim);
-        }
-
-        let mut new_dim_args = Vec::new();
-        for i in 0..a.rank {
             new_dim_args.push(format!("dim{i}: i64"));
         }
 
@@ -225,6 +223,12 @@ impl Generate for Rust {
                 futhark_entry_params.push(format!("{name}: *mut {a}"));
             }
 
+            if type_is_array(&t) || type_is_opaque(&a) {
+                entry_return.push(format!("{t}::from_ptr(self, {name}.assume_init())",));
+            } else {
+                entry_return.push(format!("{name}.assume_init()"));
+            }
+
             out_decl.push(format!("let mut {name} = std::mem::MaybeUninit::zeroed();"));
             call_args.push(format!("{name}.as_mut_ptr()"));
             return_type.push(t);
@@ -251,20 +255,6 @@ impl Generate for Rust {
                 futhark_entry_params.push(format!("{name}: {a}"));
                 entry_params.push(format!("{name}: {t}"));
                 call_args.push(name);
-            }
-        }
-
-        for (i, arg) in entry.outputs.iter().enumerate() {
-            let a = Self::get_type(&self.typemap, &arg.r#type);
-
-            let name = format!("out{i}");
-
-            let t = Self::get_type(&self.typemap, &a);
-
-            if type_is_array(&t) || type_is_opaque(&a) {
-                entry_return.push(format!("{t}::from_ptr(self, {name}.assume_init())",));
-            } else {
-                entry_return.push(format!("{name}.assume_init()"));
             }
         }
 
