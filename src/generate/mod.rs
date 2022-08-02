@@ -36,7 +36,6 @@ pub(crate) fn convert_struct_name(s: &str) -> &str {
 pub struct Config {
     pub output_path: std::path::PathBuf,
     pub output_file: std::fs::File,
-    pub auto_sync: bool,
 }
 
 impl Config {
@@ -44,26 +43,70 @@ impl Config {
         Ok(Config {
             output_path: output.as_ref().to_path_buf(),
             output_file: std::fs::File::create(output)?,
-            auto_sync: true,
         })
-    }
-
-    pub fn no_auto_sync(mut self) -> Self {
-        self.auto_sync = false;
-        self
     }
 }
 
 pub trait Generate {
-    fn generate(&mut self, library: &Library, config: &mut Config) -> Result<(), Error>;
+    fn generate(&mut self, library: &Library, config: &mut Config) -> Result<(), Error> {
+        self.bindings(library, config)?;
+        for (name, ty) in &library.manifest.types {
+            match ty {
+                manifest::Type::Array(ty) => {
+                    self.array_type(library, config, &name, ty)?;
+                }
+                manifest::Type::Opaque(ty) => {
+                    self.opaque_type(library, config, &name, ty)?;
+                }
+            }
+        }
+
+        for (name, entry) in &library.manifest.entry_points {
+            self.entry(library, config, &name, entry)?;
+        }
+        self.format(&config.output_path)?;
+        Ok(())
+    }
+
+    fn bindings(&mut self, _library: &Library, _config: &mut Config) -> Result<(), Error> {
+        Ok(())
+    }
+
+    fn array_type(
+        &mut self,
+        library: &Library,
+        config: &mut Config,
+        name: &str,
+        ty: &manifest::ArrayType,
+    ) -> Result<(), Error>;
+
+    fn opaque_type(
+        &mut self,
+        library: &Library,
+        config: &mut Config,
+        name: &str,
+        ty: &manifest::OpaqueType,
+    ) -> Result<(), Error>;
+
+    fn entry(
+        &mut self,
+        library: &Library,
+        config: &mut Config,
+        name: &str,
+        entry: &manifest::Entry,
+    ) -> Result<(), Error>;
+
+    fn format(&mut self, _output: &std::path::Path) -> Result<(), Error> {
+        Ok(())
+    }
 }
 
 fn rust() -> Box<impl Generate> {
     Box::new(Rust::default())
 }
 
-fn ocaml() -> Box<impl Generate> {
-    Box::new(OCaml::default())
+fn ocaml(config: &Config) -> Box<impl Generate> {
+    Box::new(OCaml::new(config).unwrap())
 }
 
 impl Config {
@@ -74,7 +117,7 @@ impl Config {
             .map(|x| x.to_str().expect("Invalid extension"))
         {
             Some("rs") => Some(rust()),
-            Some("ml") => Some(ocaml()),
+            Some("ml") => Some(ocaml(self)),
             _ => None,
         }
     }
