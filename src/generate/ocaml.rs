@@ -507,19 +507,6 @@ impl Generate for OCaml {
         let mut out_return = Vec::new();
         let mut out_decl = Vec::new();
 
-        for (i, input) in entry.inputs.iter().enumerate() {
-            entry_params.push(format!("input{i}"));
-
-            let mut ocaml_elemtype = self.get_type(&input.r#type);
-
-            // Transform into `Module.t`
-            if type_is_array(&ocaml_elemtype) {
-                ocaml_elemtype = first_uppercase(&ocaml_elemtype) + ".t"
-            }
-
-            arg_types.push(ocaml_elemtype);
-        }
-
         for (i, out) in entry.outputs.iter().enumerate() {
             let t = self.get_type(&out.r#type);
             let ct = self.get_ctype(&out.r#type);
@@ -544,30 +531,13 @@ impl Generate for OCaml {
             } else {
                 out_decl.push(format!("  let out{i}_ptr = allocate_n {ct} ~count:1 in"));
             }
-        }
 
-        for (i, _out) in entry.outputs.iter().enumerate() {
             let i = if entry.outputs.len() == 1 {
                 String::new()
             } else {
                 format!("{i}")
             };
             call_args.push(format!("out{i}_ptr"));
-        }
-
-        for (i, input) in entry.inputs.iter().enumerate() {
-            let t = self.get_type(&input.r#type);
-            if type_is_array(&t) {
-                call_args.push(format!("input{i}.ptr"));
-            } else if type_is_opaque(&t) {
-                call_args.push(format!("input{i}.opaque_ptr"));
-            } else {
-                call_args.push(format!("input{i}"));
-            }
-        }
-
-        for (i, out) in entry.outputs.iter().enumerate() {
-            let t = self.get_type(&out.r#type);
 
             let idx = if entry.outputs.len() == 1 {
                 String::new()
@@ -586,6 +556,29 @@ impl Generate for OCaml {
                 out_return.push(format!("!@out{idx}_ptr"));
             }
         }
+
+        for (i, input) in entry.inputs.iter().enumerate() {
+            entry_params.push(format!("input{i}"));
+
+            let mut ocaml_elemtype = self.get_type(&input.r#type);
+
+            // Transform into `Module.t`
+            if type_is_array(&ocaml_elemtype) {
+                ocaml_elemtype = first_uppercase(&ocaml_elemtype) + ".t"
+            }
+
+            arg_types.push(ocaml_elemtype);
+
+            let t = self.get_type(&input.r#type);
+            if type_is_array(&t) {
+                call_args.push(format!("input{i}.ptr"));
+            } else if type_is_opaque(&t) {
+                call_args.push(format!("input{i}.opaque_ptr"));
+            } else {
+                call_args.push(format!("input{i}"));
+            }
+        }
+
         writeln!(
             config.output_file,
             include_str!("templates/ocaml/entry.ml"),
