@@ -2,6 +2,7 @@
 
 - Added more methods to `Generate` trait to make it easier to add new
   languages
+- Fix OCaml codegen for `u8` arrays
 
 # 0.1.1
 
