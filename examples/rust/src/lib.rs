@@ -27,4 +27,14 @@ mod tests {
             assert_eq!(data1[i], data[i] * t.get_0().unwrap().get_x().unwrap());
         }
     }
+
+    #[test]
+    fn count_lines() {
+        let ctx = Context::new_with_options(Options::new().debug().log().profile()).unwrap();
+
+        let data = String::from("this\nis\na\ntest\n").into_bytes();
+        let data = ArrayU8D1::new(&ctx, [data.len() as i64], &data).unwrap();
+        let n = ctx.count_lines(&data).unwrap();
+        assert_eq!(n, 4);
+    }
 }

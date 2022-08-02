@@ -11,10 +11,10 @@ pub struct OCaml {
 }
 
 const OCAML_CTYPES_MAP: &[(&str, &str)] = &[
-    ("i8", "int8_t"),
-    ("u8", "uint8_t"),
-    ("i16", "int16_t"),
-    ("u16", "uint16_t"),
+    ("i8", "int"),
+    ("u8", "int"),
+    ("i16", "int"),
+    ("u16", "int"),
     ("i32", "int32_t"),
     ("u32", "int32_t"),
     ("i64", "int64_t"),
