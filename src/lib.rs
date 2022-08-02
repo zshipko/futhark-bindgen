@@ -53,7 +53,7 @@ impl Backend {
         match self {
             Backend::CUDA => &["cuda", "cudart", "nvrtc", "m"],
             Backend::OpenCL => &["OpenCL", "m"],
-            Backend::Multicore => &["pthread", "m"],
+            Backend::Multicore | Backend::ISPC => &["pthread", "m"],
             _ => &[],
         }
     }

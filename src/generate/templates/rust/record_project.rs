@@ -2,7 +2,7 @@ impl<'a> {rust_type}<'a> {{
     pub fn get_{field_name}(&self) -> Result<{rust_field_type}, Error> {{
         let mut out = std::mem::MaybeUninit::zeroed();
         let rc = unsafe {{
-            futhark_project_opaque_{name}_{field_name}(
+            {project_fn}(
                 self.ctx.context,
                 out.as_mut_ptr(),
                 self.data

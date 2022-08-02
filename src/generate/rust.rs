@@ -1,4 +1,4 @@
-use crate::generate::first_uppercase;
+use crate::generate::{convert_struct_name, first_uppercase};
 use crate::*;
 use std::io::Write;
 
@@ -42,7 +42,7 @@ impl Rust {
         let elemtype = a.elemtype.to_str();
         let rank = a.rank;
 
-        let futhark_type = format!("futhark_{elemtype}_{rank}d");
+        let futhark_type = convert_struct_name(&a.ctype).to_string();
         let rust_type = format!("Array{}D{rank}", elemtype.to_ascii_uppercase(),);
         let info = ArrayInfo {
             futhark_type,
@@ -96,27 +96,31 @@ impl Rust {
         name: &str,
         ty: &manifest::OpaqueType,
         config: &mut Config,
-    ) -> Result<String, Error> {
-        let futhark_type = format!("futhark_opaque_{name}");
-        let rust_type = first_uppercase(name);
+    ) -> Result<(String, String), Error> {
+        let futhark_type = convert_struct_name(&ty.ctype).to_string();
+        let mut rust_type = first_uppercase(futhark_type.strip_prefix("futhark_opaque_").unwrap());
+        if rust_type.chars().next().unwrap().is_numeric() || name.contains(' ') {
+            rust_type = format!("Type{}", rust_type);
+        }
 
         writeln!(
             config.output_file,
             include_str!("templates/rust/opaque.rs"),
             futhark_type = futhark_type,
             rust_type = rust_type,
-            name = name,
+            free_fn = ty.ops.free,
         )?;
 
         let record = match &ty.record {
             Some(r) => r,
-            None => return Ok(rust_type),
+            None => return Ok((futhark_type, rust_type)),
         };
 
         let mut new_call_args = vec![];
         let mut new_params = vec![];
         let mut new_extern_params = vec![];
         for field in record.fields.iter() {
+            // Build new function
             let a = Self::get_type(&self.typemap, &field.r#type);
             let t = Self::get_type(&self.typemap, &a);
 
@@ -138,24 +142,8 @@ impl Rust {
             }
 
             new_params.push(format!("field{}: {u}", field.name));
-        }
 
-        writeln!(
-            config.output_file,
-            include_str!("templates/rust/record.rs"),
-            rust_type = rust_type,
-            futhark_type = futhark_type,
-            new_fn = record.new,
-            new_params = new_params.join(", "),
-            new_call_args = new_call_args.join(", "),
-            new_extern_params = new_extern_params.join(", "),
-            name = name,
-        )?;
-
-        // Implement get functions
-        for field in record.fields.iter() {
-            let a = Self::get_type(&self.typemap, &field.r#type);
-            let t = Self::get_type(&self.typemap, &a);
+            // Implement get function
 
             // If the output type is an array or opaque type then we need to wrap the return value
             let (output, futhark_field_type) = if type_is_opaque(&a) || type_is_array(&t) {
@@ -176,12 +164,22 @@ impl Rust {
                 field_name = field.name,
                 futhark_field_type = futhark_field_type,
                 rust_field_type = t,
-                name = name,
                 output = output
             )?;
         }
 
-        Ok(rust_type)
+        writeln!(
+            config.output_file,
+            include_str!("templates/rust/record.rs"),
+            rust_type = rust_type,
+            futhark_type = futhark_type,
+            new_fn = record.new,
+            new_params = new_params.join(", "),
+            new_call_args = new_call_args.join(", "),
+            new_extern_params = new_extern_params.join(", "),
+        )?;
+
+        Ok((futhark_type, rust_type))
     }
 
     fn generate_entry_function(
@@ -254,13 +252,13 @@ impl Rust {
             }
         }
 
-        let (entry_return_type, entry_return) = if entry.outputs.len() <= 1 {
-            (return_type.join(", "), entry_return.join(", "))
-        } else {
-            (
+        let (entry_return_type, entry_return) = match entry.outputs.len() {
+            0 => ("()".to_string(), "()".to_string()),
+            1 => (return_type.join(", "), entry_return.join(", ")),
+            _ => (
                 format!("({})", return_type.join(", ")),
                 format!("({})", entry_return.join(", ")),
-            )
+            ),
         };
 
         writeln!(
@@ -336,11 +334,9 @@ impl Generate for Rust {
                     self.typemap.insert(info.futhark_type, info.rust_type);
                 }
                 manifest::Type::Opaque(ty) => {
-                    let rust_type = self.generate_opaque_type(name, ty, config)?;
-                    self.typemap
-                        .insert(name.clone(), format!("futhark_opaque_{name}"));
-                    self.typemap
-                        .insert(format!("futhark_opaque_{name}"), rust_type);
+                    let (futhark_type, rust_type) = self.generate_opaque_type(name, ty, config)?;
+                    self.typemap.insert(name.clone(), futhark_type.clone());
+                    self.typemap.insert(futhark_type, rust_type);
                 }
             }
         }

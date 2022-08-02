@@ -5,7 +5,7 @@ struct {futhark_type} {{
 }}
 
 extern "C" {{
-    fn futhark_free_opaque_{name}(
+    fn {free_fn}(
         _: *mut futhark_context,
         _: *mut {futhark_type}
     ) -> std::os::raw::c_int;
@@ -26,7 +26,7 @@ impl<'a> {rust_type}<'a> {{
 impl<'a> Drop for {rust_type}<'a> {{
     fn drop(&mut self) {{
         unsafe {{
-            futhark_free_opaque_{name}(self.ctx.context, self.data);
+            {free_fn}(self.ctx.context, self.data);
         }}
     }}
 }}

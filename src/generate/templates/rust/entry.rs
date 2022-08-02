@@ -6,6 +6,7 @@ impl Context {{
         }};
         if rc != 0 {{ return Err(Error::Code(rc)); }}
     
+        #[allow(unused_unsafe)]
         unsafe {{
             Ok({entry_return})
         }}

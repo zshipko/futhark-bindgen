@@ -14,6 +14,17 @@ pub(crate) fn first_uppercase(s: &str) -> String {
     s
 }
 
+pub(crate) fn convert_struct_name(s: &str) -> &str {
+    s.strip_prefix("struct")
+        .unwrap()
+        .strip_suffix('*')
+        .unwrap()
+        .strip_prefix(|x: char| x.is_ascii_whitespace())
+        .unwrap()
+        .strip_suffix(|x: char| x.is_ascii_whitespace())
+        .unwrap()
+}
+
 /*pub(crate) fn first_lowercase(s: &str) -> String {
     let mut s = s.to_string();
     if let Some(r) = s.get_mut(0..1) {

@@ -1,6 +1,6 @@
 use std::io::Write;
 
-use crate::generate::first_uppercase;
+use crate::generate::{convert_struct_name, first_uppercase};
 use crate::*;
 
 pub struct OCaml {
@@ -15,9 +15,9 @@ const OCAML_CTYPES_MAP: &[(&str, &str)] = &[
     ("i16", "int16_t"),
     ("u16", "uint16_t"),
     ("i32", "int32_t"),
-    ("u32", "uint32_t"),
+    ("u32", "int32_t"),
     ("i64", "int64_t"),
-    ("u64", "uint64_t"),
+    ("u64", "int64_t"),
     ("f16", ""),
     ("f32", "float"),
     ("f64", "double"),
@@ -178,7 +178,7 @@ impl Generate for OCaml {
                     self.ctypes_map.insert(name.clone(), ocaml_name.clone());
                     let elem_ptr = format!("ptr {ctypes_elemtype}");
                     generated_foreign_functions.push(format!(
-                        "  let {ocaml_name} = typedef (ptr void) \"array_{elemtype}_{rank}d\""
+                        "  let {ocaml_name} = typedef (ptr void) \"{ocaml_name}\""
                     ));
                     let mut new_args = vec!["context", &elem_ptr];
                     new_args.resize(rank as usize + 2, "int64_t");
@@ -208,13 +208,26 @@ impl Generate for OCaml {
                     ));
                 }
                 manifest::Type::Opaque(ty) => {
-                    generated_foreign_functions
-                        .push(format!("  let {name} = typedef (ptr void) \"{name}\""));
+                    let futhark_name = convert_struct_name(&ty.ctype);
+                    let mut ocaml_name = futhark_name
+                        .strip_prefix("futhark_opaque_")
+                        .unwrap()
+                        .to_string();
+                    if ocaml_name.chars().next().unwrap().is_numeric() || name.contains(' ') {
+                        ocaml_name = format!("type_{ocaml_name}");
+                    }
+
+                    self.typemap
+                        .insert(name.clone(), format!("{}.t", first_uppercase(&ocaml_name)));
+                    self.ctypes_map.insert(name.to_string(), ocaml_name.clone());
+                    generated_foreign_functions.push(format!(
+                        "  let {ocaml_name} = typedef (ptr void) \"{futhark_name}\""
+                    ));
 
                     let free_fn = &ty.ops.free;
                     generated_foreign_functions.push(format!(
                         "  {}",
-                        self.foreign_function(free_fn, "int", vec!["context", name])
+                        self.foreign_function(free_fn, "int", vec!["context", &ocaml_name])
                     ));
 
                     let record = match &ty.record {
@@ -223,7 +236,7 @@ impl Generate for OCaml {
                     };
 
                     let new_fn = &record.new;
-                    let mut args = vec!["context".to_string(), format!("ptr {name}")];
+                    let mut args = vec!["context".to_string(), format!("ptr {ocaml_name}")];
                     for f in record.fields.iter() {
                         let cty = self
                             .ctypes_map
@@ -247,7 +260,7 @@ impl Generate for OCaml {
                             self.foreign_function(
                                 &f.project,
                                 "int",
-                                vec!["context", &format!("ptr {cty}"), name]
+                                vec!["context", &format!("ptr {cty}"), &ocaml_name]
                             )
                         ));
                     }
@@ -349,9 +362,17 @@ impl Generate for OCaml {
                     )?;
                 }
                 manifest::Type::Opaque(ty) => {
-                    let module_name = first_uppercase(name);
+                    let futhark_name = convert_struct_name(&ty.ctype);
+                    let mut ocaml_name = futhark_name
+                        .strip_prefix("futhark_opaque_")
+                        .unwrap()
+                        .to_string();
+                    if ocaml_name.chars().next().unwrap().is_numeric() || name.contains(' ') {
+                        ocaml_name = format!("type_{ocaml_name}");
+                    }
+                    let module_name = first_uppercase(&ocaml_name);
                     self.typemap
-                        .insert(name.clone(), format!("{module_name}.t"));
+                        .insert(ocaml_name.clone(), format!("{module_name}.t"));
 
                     let free_fn = &ty.ops.free;
 
@@ -362,7 +383,7 @@ impl Generate for OCaml {
                         config.output_file,
                         include_str!("templates/ocaml/opaque.ml"),
                         free_fn = free_fn,
-                        name = name,
+                        name = ocaml_name,
                     )?;
                     writeln!(mli_file, include_str!("templates/ocaml/opaque.mli"),)?;
 
@@ -414,12 +435,6 @@ impl Generate for OCaml {
                         let name = &f.name;
                         let project = &f.project;
 
-                        let s = if type_is_array(&t) {
-                            format!("Bindings.{t}")
-                        } else {
-                            t.clone()
-                        };
-
                         let out = if type_is_opaque(&t) {
                             let call = t.replace(".t", ".of_ptr");
                             format!("{call} t.opaque_ctx !@out")
@@ -434,6 +449,14 @@ impl Generate for OCaml {
                             format!("{}.t", first_uppercase(&t))
                         } else {
                             t.to_string()
+                        };
+
+                        let s = if type_is_array(&t) {
+                            format!("Bindings.{t}")
+                        } else if !t.ends_with(".t") {
+                            self.get_ctype(&f.r#type)
+                        } else {
+                            t
                         };
 
                         writeln!(
@@ -554,12 +577,18 @@ impl Generate for OCaml {
                 call_args = call_args.join(" "),
                 out_return = out_return.join(", ")
             )?;
+
+            let return_type = if return_type.is_empty() {
+                "unit".to_string()
+            } else {
+                return_type.join(", ")
+            };
             writeln!(
                 mli_file,
                 include_str!("templates/ocaml/entry.mli"),
                 name = name,
                 arg_types = arg_types.join(" -> "),
-                return_type = return_type.join(", "),
+                return_type = return_type,
             )?;
         }
 

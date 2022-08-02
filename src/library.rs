@@ -35,12 +35,15 @@ impl Library {
                 .flag("-pthread")
                 .flag("-lm")
                 .flag("-std=c99")
+                .extra_warnings(false)
                 .warnings(false)
                 .compile(&name);
         } else {
             cc::Build::new()
+                .flag("-std=c99")
                 .flag("-Wno-unused-parameter")
                 .file(&self.c_file)
+                .extra_warnings(false)
                 .warnings(false)
                 .compile(&name);
         }
