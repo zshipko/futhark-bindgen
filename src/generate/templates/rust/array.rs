@@ -40,7 +40,7 @@ impl<'a> {rust_type}<'a> {{
             return Err(Error::InvalidShape);
         }}
         let rc = unsafe {{
-            futhark_values_{elemtype}_{rank}d(self.ctx.context, self.ptr, data.as_mut_ptr())
+            {values_fn}(self.ctx.context, self.ptr, data.as_mut_ptr())
         }};
         if rc != 0 {{
             return Err(Error::Code(rc));
@@ -51,7 +51,7 @@ impl<'a> {rust_type}<'a> {{
 
     pub fn get(&self) -> std::result::Result<Vec<{elemtype}>, Error> {{
         let size: i64 = self.shape.iter().product();
-        let mut vec = vec![0_{elemtype}; size as usize];
+        let mut vec = vec![{elemtype}::default(); size as usize];
         self.values(&mut vec)?;
         Ok(vec)
     }}

@@ -14,7 +14,7 @@ fn type_is_opaque(a: &str) -> bool {
     a.contains("futhark_opaque_")
 }
 
-const RUST_TYPE_MAP: &[(&str, &str)] = &[("f16", "")];
+const RUST_TYPE_MAP: &[(&str, &str)] = &[("f16", "half::f16")];
 
 impl Default for Rust {
     fn default() -> Self {
