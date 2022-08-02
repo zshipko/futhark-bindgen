@@ -12,13 +12,13 @@ pub struct {rust_type}<'a> {{
 
 impl<'a> {rust_type}<'a> {{
     pub fn new(ctx: &'a Context, dims: [i64; {rank}], data: impl AsRef<[{elemtype}]>) -> std::result::Result<Self, Error> {{
-        let size = dims.iter().fold(1, |a, b| a * b);
+        let size: i64 = dims.iter().product();
         let data = data.as_ref();
         if data.len() as i64 != size {{
             return Err(Error::InvalidShape)
         }}
         let ptr = unsafe {{
-            {new_fn}(ctx.context, data.as_ptr(), {dim_params})    
+            {new_fn}(ctx.context, data.as_ptr(), {dim_params})
         }};
         if ptr.is_null() {{ return Err(Error::NullPtr); }}
         ctx.auto_sync();
@@ -28,15 +28,15 @@ impl<'a> {rust_type}<'a> {{
             ctx,
         }})
     }}
-    
+
     pub fn shape(&self) -> &[i64; {rank}] {{
         &self.shape
     }}
-    
+
     pub fn values(&self, mut data: impl AsMut<[{elemtype}]>) -> std::result::Result<(), Error> {{
-        let size = self.shape.iter().fold(1, |a, b| a * b);
+        let size: i64 = self.shape.iter().product();
         let data = data.as_mut();
-        if data.len() as i64 != size {{ 
+        if data.len() as i64 != size {{
             return Err(Error::InvalidShape);
         }}
         let rc = unsafe {{
@@ -48,26 +48,26 @@ impl<'a> {rust_type}<'a> {{
         self.ctx.auto_sync();
         Ok(())
     }}
-    
+
     pub fn get(&self) -> std::result::Result<Vec<{elemtype}>, Error> {{
-        let size = self.shape.iter().fold(1, |a, b| a as usize * *b as usize);
-        let mut vec = vec![0 as {elemtype}; size];
+        let size: i64 = self.shape.iter().product();
+        let mut vec = vec![0_{elemtype}; size as usize];
         self.values(&mut vec)?;
         Ok(vec)
     }}
-    
-    
+
+
     #[allow(unused)]
     fn from_ptr(ctx: &'a Context, ptr: *mut {futhark_type}) -> Self {{
         let len_ptr = unsafe {{ futhark_shape_{elemtype}_{rank}d(ctx.context, ptr) }};
         let mut shape = [0i64; {rank}];
         unsafe {{
-            for i in 0 .. {rank} {{
-                shape[i] = *len_ptr.add(i);    
+            for (i, s) in shape.iter_mut().enumerate() {{
+                *s = *len_ptr.add(i);
             }}
         }}
         Self {{ ctx, shape, ptr }}
-    }}    
+    }}
 }}
 
 
@@ -75,7 +75,7 @@ impl<'a> Drop for {rust_type}<'a> {{
     fn drop(&mut self){{
         unsafe {{
             futhark_free_{elemtype}_{rank}d(self.ctx.context, self.ptr as *mut _);
-        }}  
+        }}
     }}
 }}
 

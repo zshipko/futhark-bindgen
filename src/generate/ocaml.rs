@@ -535,25 +535,19 @@ impl Generate for OCaml {
             let i = if entry.outputs.len() == 1 {
                 String::new()
             } else {
-                format!("{i}")
+                i.to_string()
             };
             call_args.push(format!("out{i}_ptr"));
 
-            let idx = if entry.outputs.len() == 1 {
-                String::new()
-            } else {
-                format!("{i}")
-            };
-
             if type_is_array(&t) {
                 let m = first_uppercase(&t);
-                out_return.push(format!("({m}.of_ptr ctx !@out{idx}_ptr)"));
+                out_return.push(format!("({m}.of_ptr ctx !@out{i}_ptr)"));
             } else if type_is_opaque(&t) {
                 let m = first_uppercase(&t);
                 let m = m.strip_suffix(".t").unwrap_or(&m);
-                out_return.push(format!("({m}.of_ptr ctx !@out{idx}_ptr)"));
+                out_return.push(format!("({m}.of_ptr ctx !@out{i}_ptr)"));
             } else {
-                out_return.push(format!("!@out{idx}_ptr"));
+                out_return.push(format!("!@out{i}_ptr"));
             }
         }
 

@@ -1,5 +1,12 @@
 type number = {x: f32}
 
+type point = {x: f32, y: f32}
+
+entry distance (a: point) (b: point) : f32 =
+  let dx = b.x - a.x in
+  let dy = b.y - a.y in
+  f32.sqrt ((dx * dx) + (dy * dy))
+
 type~ tup = (number, []f32)
 
 -- Check struct argument with numeric return
@@ -34,3 +41,11 @@ entry option_get (x: option) : i64 =
 
 -- Check entry point with sum-type argument and return value
 entry return_option (x: option): option = x
+
+-- Check input and output array with 2 dimensions
+entry mul2 (a: [][]f64) : [][]f64 =
+  map (map (\b -> b * 2.0)) a
+
+-- Check lots of arguments
+entry sinking1 (as: []i32) (bs: []i32) (cs: []i32) (ds: []i32) (es: []i32) =
+  map5 (\a b c d e -> if a == 0 then 0 else b + c + d + e) as bs cs ds es

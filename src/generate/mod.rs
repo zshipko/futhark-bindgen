@@ -53,16 +53,16 @@ pub trait Generate {
         for (name, ty) in &library.manifest.types {
             match ty {
                 manifest::Type::Array(ty) => {
-                    self.array_type(library, config, &name, ty)?;
+                    self.array_type(library, config, name, ty)?;
                 }
                 manifest::Type::Opaque(ty) => {
-                    self.opaque_type(library, config, &name, ty)?;
+                    self.opaque_type(library, config, name, ty)?;
                 }
             }
         }
 
         for (name, entry) in &library.manifest.entry_points {
-            self.entry(library, config, &name, entry)?;
+            self.entry(library, config, name, entry)?;
         }
         self.format(&config.output_path)?;
         Ok(())
