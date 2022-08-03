@@ -1,6 +1,6 @@
 open Ctypes
-open Unsigned
-open Signed
+open! Unsigned
+open! Signed
 
 module Bindings = struct
   external _stub: unit -> unit = "futhark_context_new"
