@@ -133,9 +133,9 @@ entry sinking1 (as: []i32) (bs: []i32) (cs: []i32) (ds: []i32) (es: []i32) =
   map5 (\a b c d e -> if a == 0 then 0 else b + c + d + e) as bs cs ds es
 
 entry count_lines (input: []u8) : i64 =
-  foldl (\acc x -> if x == 10 then acc + 1 else acc) 0i64 input
+  foldl (\acc x -> acc + i64.bool (x == 10)) 0i64 input
 
 entry count_true (input: []bool) : i64 =
-  foldl (\acc x -> if x then acc + 1 else acc) 0i64 input
+  foldl (\acc x -> acc + i64.bool x) 0i64 input
 
 
