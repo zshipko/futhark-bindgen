@@ -42,5 +42,5 @@ See the output of `futhark-bindgen --help` for more information
 
 ## Example projects
 
-- [https://github.com/zshipko/futhark-bindgen/tree/main/examples/rust](Rust)
-- [https://github.com/zshipko/futhark-bindgen/tree/main/examples/ocaml](OCaml)
+- [Rust](https://github.com/zshipko/futhark-bindgen/tree/main/examples/rust)
+- [OCaml](https://github.com/zshipko/futhark-bindgen/tree/main/examples/ocaml)
