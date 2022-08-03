@@ -78,7 +78,7 @@ impl Backend {
 /// `src` is the full path to your Futhark code
 ///
 /// `dest` is expected to be a relative path that will
-// be appended to `$OUT_DIR`
+/// be appended to `$OUT_DIR`
 pub fn build(
     backend: Backend,
     src: impl AsRef<std::path::Path>,

@@ -67,9 +67,7 @@ pub trait Generate {
     }
 
     /// Step 1: generate any setup code or low-level bindings
-    fn bindings(&mut self, _pkg: &Package, _config: &mut Config) -> Result<(), Error> {
-        Ok(())
-    }
+    fn bindings(&mut self, _pkg: &Package, _config: &mut Config) -> Result<(), Error>;
 
     /// Step 2: generate code for array types
     fn array_type(
@@ -89,7 +87,7 @@ pub trait Generate {
         ty: &manifest::OpaqueType,
     ) -> Result<(), Error>;
 
-    /// Generate code for entry functions
+    /// Step 4: generate code for entry points
     fn entry(
         &mut self,
         pkg: &Package,
@@ -98,7 +96,7 @@ pub trait Generate {
         entry: &manifest::Entry,
     ) -> Result<(), Error>;
 
-    /// Run any formatting program or post-processing on the output file
+    /// Step 5: Optionally, run any formatting program or post-processing on the output file
     fn format(&mut self, _output: &std::path::Path) -> Result<(), Error> {
         Ok(())
     }
