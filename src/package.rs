@@ -1,14 +1,25 @@
 use crate::*;
 
+/// Compiled Futhark package
 #[derive(Debug, Clone)]
-pub struct Library {
+pub struct Package {
+    /// Manifest, parsed from the manifest file
     pub manifest: Manifest,
+
+    /// Path to the generated C file
     pub c_file: std::path::PathBuf,
+
+    /// Path to the generate C header file
     pub h_file: std::path::PathBuf,
+
+    /// Source file
     pub src: std::path::PathBuf,
 }
 
-impl Library {
+impl Package {
+    /// Link the package
+    ///
+    /// Note: This should only be used in `build.rs`
     #[cfg(feature = "build")]
     pub fn link(&self) {
         let project = std::env::var("CARGO_PKG_NAME").unwrap();

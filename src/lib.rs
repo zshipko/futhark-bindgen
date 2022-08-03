@@ -3,40 +3,52 @@ pub(crate) use std::collections::BTreeMap;
 mod compiler;
 mod error;
 pub(crate) mod generate;
-mod library;
 pub mod manifest;
+mod package;
 
 pub use compiler::Compiler;
 pub use error::Error;
 pub use generate::{Config, Generate, OCaml, Rust};
-pub use library::Library;
 pub use manifest::Manifest;
+pub use package::Package;
 
+/// `Backend` is used to select a backend when running the `futhark` executable
 #[derive(Debug, serde::Deserialize, PartialEq, Eq, Clone, Copy)]
 pub enum Backend {
+    /// Sequential C backend: `futhark c`
+    ///
+    /// Requires a C compiler
     #[serde(rename = "c")]
     C,
 
+    /// CUDA backend: `futhark cuda`
+    ///
+    /// Requires the CUDA runtime and a C compiler
     #[serde(rename = "cuda")]
     CUDA,
 
+    /// OpenCL backend: `futhark opencl`
+    ///
+    /// Requires OpenCL and a C compiler
     #[serde(rename = "opencl")]
     OpenCL,
 
+    /// Multicore C backend: `futhark multicore`
+    ///
+    /// Requires a C compiler
     #[serde(rename = "multicore")]
     Multicore,
 
+    /// ISPC backend: `futhark ispc`
+    ///
+    /// Requires the `ispc` compiler in your `$PATH`
+    /// and a C compiler
     #[serde(rename = "ispc")]
     ISPC,
-
-    #[serde(rename = "python")]
-    Python,
-
-    #[serde(rename = "pyopencl")]
-    PyOpenCL,
 }
 
 impl Backend {
+    /// Get the name of a backend
     pub fn to_str(&self) -> &'static str {
         match self {
             Backend::C => "c",
@@ -44,11 +56,10 @@ impl Backend {
             Backend::OpenCL => "opencl",
             Backend::Multicore => "multicore",
             Backend::ISPC => "ispc",
-            Backend::Python => "python",
-            Backend::PyOpenCL => "pyopencl",
         }
     }
 
+    /// Returns the C libraries that need to be linked for a backend
     pub fn required_c_libs(&self) -> &'static [&'static str] {
         match self {
             Backend::CUDA => &["cuda", "cudart", "nvrtc", "m"],

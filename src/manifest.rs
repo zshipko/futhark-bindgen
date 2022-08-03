@@ -1,40 +1,53 @@
 use crate::*;
 
+/// Scalar types
 #[derive(Clone, Debug, serde::Deserialize)]
 pub enum ElemType {
+    /// Signed 8 bit integer
     #[serde(rename = "i8")]
     I8,
 
+    /// Signed 16 bit integer
     #[serde(rename = "i16")]
     I16,
 
+    /// Signed 32 bit integer
     #[serde(rename = "i32")]
     I32,
 
+    /// Signed 64 bit integer
     #[serde(rename = "i64")]
     I64,
 
+    /// Unsigned 8 bit integer
     #[serde(rename = "u8")]
     U8,
 
+    /// Unsigned 16 bit integer
     #[serde(rename = "u16")]
     U16,
 
+    /// Unsigned 32 bit integer
     #[serde(rename = "u32")]
     U32,
 
+    /// Unsigned 64 bit integer
     #[serde(rename = "u64")]
     U64,
 
+    /// 16 bit float
     #[serde(rename = "f16")]
     F16,
 
+    /// 32 bit float
     #[serde(rename = "f32")]
     F32,
 
+    /// 64 bit float
     #[serde(rename = "f64")]
     F64,
 
+    /// Boolean
     #[serde(rename = "bool")]
     Bool,
 }

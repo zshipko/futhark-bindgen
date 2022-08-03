@@ -1,7 +1,13 @@
+/// Errors
 #[derive(Debug)]
 pub enum Error {
+    /// Compilation failed
     CompilationFailed,
+
+    /// Json decoding error
     Json(serde_json::Error),
+
+    /// std::io::Error
     Io(std::io::Error),
 }
 

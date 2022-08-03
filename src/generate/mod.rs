@@ -25,20 +25,17 @@ pub(crate) fn convert_struct_name(s: &str) -> &str {
         .unwrap()
 }
 
-/*pub(crate) fn first_lowercase(s: &str) -> String {
-    let mut s = s.to_string();
-    if let Some(r) = s.get_mut(0..1) {
-        r.make_ascii_uppercase();
-    }
-    s
-}*/
-
+/// Code generation config
 pub struct Config {
+    /// Output file
     pub output_path: std::path::PathBuf,
+
+    /// Path to output file
     pub output_file: std::fs::File,
 }
 
 impl Config {
+    /// Create a new config using the provided output file path
     pub fn new(output: impl AsRef<std::path::Path>) -> Result<Config, Error> {
         Ok(Config {
             output_path: output.as_ref().to_path_buf(),
@@ -48,7 +45,8 @@ impl Config {
 }
 
 pub trait Generate {
-    fn generate(&mut self, library: &Library, config: &mut Config) -> Result<(), Error> {
+    /// Iterates through the manifest and generates code
+    fn generate(&mut self, library: &Package, config: &mut Config) -> Result<(), Error> {
         self.bindings(library, config)?;
         for (name, ty) in &library.manifest.types {
             match ty {
@@ -68,34 +66,39 @@ pub trait Generate {
         Ok(())
     }
 
-    fn bindings(&mut self, _library: &Library, _config: &mut Config) -> Result<(), Error> {
+    /// Step 1: generate any setup code or low-level bindings
+    fn bindings(&mut self, _library: &Package, _config: &mut Config) -> Result<(), Error> {
         Ok(())
     }
 
+    /// Step 2: generate code for array types
     fn array_type(
         &mut self,
-        library: &Library,
+        library: &Package,
         config: &mut Config,
         name: &str,
         ty: &manifest::ArrayType,
     ) -> Result<(), Error>;
 
+    /// Step 3: generate code for opaque types
     fn opaque_type(
         &mut self,
-        library: &Library,
+        library: &Package,
         config: &mut Config,
         name: &str,
         ty: &manifest::OpaqueType,
     ) -> Result<(), Error>;
 
+    /// Generate code for entry functions
     fn entry(
         &mut self,
-        library: &Library,
+        library: &Package,
         config: &mut Config,
         name: &str,
         entry: &manifest::Entry,
     ) -> Result<(), Error>;
 
+    /// Run any formatting program or post-processing on the output file
     fn format(&mut self, _output: &std::path::Path) -> Result<(), Error> {
         Ok(())
     }
@@ -110,6 +113,7 @@ fn ocaml(config: &Config) -> Box<impl Generate> {
 }
 
 impl Config {
+    /// Automatically detect output language
     pub fn detect(&self) -> Option<Box<dyn Generate>> {
         match self
             .output_path
