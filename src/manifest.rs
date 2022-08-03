@@ -143,6 +143,7 @@ pub enum Type {
     Opaque(OpaqueType),
 }
 
+/// A Rust encoding of the Futhark manifest file
 #[derive(Clone, Debug, serde::Deserialize)]
 pub struct Manifest {
     pub backend: Backend,
@@ -152,11 +153,7 @@ pub struct Manifest {
 }
 
 impl Manifest {
-    pub fn from_source_file(filename: impl AsRef<std::path::Path>) -> Result<Manifest, Error> {
-        let f = filename.as_ref().with_extension("json");
-        Self::parse_file(f)
-    }
-
+    /// Parse the manifest file
     pub fn parse_file(filename: impl AsRef<std::path::Path>) -> Result<Manifest, Error> {
         let r = std::fs::File::open(filename)?;
         let manifest = serde_json::from_reader(r)?;
