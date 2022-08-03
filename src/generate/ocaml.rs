@@ -7,19 +7,19 @@ use crate::*;
 pub struct OCaml {
     typemap: BTreeMap<String, String>,
     ctypes_map: BTreeMap<String, String>,
-    ba_map: BTreeMap<String, String>,
+    ba_map: BTreeMap<String, (String, String)>,
     mli_file: std::fs::File,
 }
 
 const OCAML_CTYPES_MAP: &[(&str, &str)] = &[
-    ("i8", "int"),
-    ("u8", "int"),
-    ("i16", "int"),
-    ("u16", "int"),
+    ("i8", "char"),
+    ("u8", "uint8_t"),
+    ("i16", "int16_t"),
+    ("u16", "uint16_t"),
     ("i32", "int32_t"),
-    ("u32", "int32_t"),
+    ("u32", "uint32_t"),
     ("i64", "int64_t"),
-    ("u64", "int64_t"),
+    ("u64", "uint64_t"),
     ("f16", ""), // No half type in OCaml
     ("f32", "float"),
     ("f64", "double"),
@@ -27,33 +27,33 @@ const OCAML_CTYPES_MAP: &[(&str, &str)] = &[
 ];
 
 const OCAML_TYPE_MAP: &[(&str, &str)] = &[
-    ("i8", "int"),
-    ("u8", "int"),
+    ("i8", "char"),
+    ("u8", "UInt8.t"),
     ("i16", "int"),
-    ("u16", "int"),
+    ("u16", "UInt16.t"),
     ("i32", "int32"),
     ("i64", "int64"),
-    ("u32", "int32"),
-    ("u64", "int64"),
+    ("u32", "UInt32.t"),
+    ("u64", "UInt64.t"),
     ("f16", ""), // No half type in OCaml
     ("f32", "float"),
     ("f64", "float"),
     ("bool", "bool"),
 ];
 
-const OCAML_BA_TYPE_MAP: &[(&str, &str)] = &[
-    ("i8", "Bigarray.int8_signed_elt"),
-    ("u8", "Bigarray.int8_unsigned_elt"),
-    ("i16", "Bigarray.int16_signed_elt"),
-    ("u16", "Bigarray.int16_unsigned_elt"),
-    ("i32", "Bigarray.int32_elt"),
-    ("i64", "Bigarray.int64_elt"),
-    ("u32", "Bigarray.int32_elt"),
-    ("u64", "Bigarray.int64_elt"),
-    ("f16", ""), // No half Bigarray kind
-    ("f32", "Bigarray.float32_elt"),
-    ("f64", "Bigarray.float64_elt"),
-    ("bool", ""), // No boolean bigarray kind
+const OCAML_BA_TYPE_MAP: &[(&str, (&str, &str))] = &[
+    ("i8", ("int", "Bigarray.int8_signed_elt")),
+    ("u8", ("int", "Bigarray.int8_unsigned_elt")),
+    ("i16", ("int", "Bigarray.int16_signed_elt")),
+    ("u16", ("int", "Bigarray.int16_unsigned_elt")),
+    ("i32", ("int32", "Bigarray.int32_elt")),
+    ("i64", ("int64", "Bigarray.int64_elt")),
+    ("u32", ("int32", "Bigarray.int32_elt")),
+    ("u64", ("int64", "Bigarray.int64_elt")),
+    ("f16", ("", "")), // No half Bigarray kind
+    ("f32", ("float", "Bigarray.float32_elt")),
+    ("f64", ("float", "Bigarray.float64_elt")),
+    ("bool", ("int", "Bigarray.int8_unsigned_elt")),
 ];
 
 fn type_is_array(t: &str) -> bool {
@@ -84,7 +84,7 @@ impl OCaml {
 
         let ba_map = OCAML_BA_TYPE_MAP
             .iter()
-            .map(|(a, b)| (a.to_string(), b.to_string()))
+            .map(|(a, (b, c))| (a.to_string(), (b.to_string(), c.to_string())))
             .collect();
 
         let ctypes_map = OCAML_CTYPES_MAP
@@ -133,9 +133,9 @@ impl OCaml {
         x
     }
 
-    fn get_ba_type(&self, t: &str) -> String {
-        let x = self.ba_map.get(t).cloned().unwrap_or_else(|| t.to_string());
-        if x.is_empty() {
+    fn get_ba_type(&self, t: &str) -> (String, String) {
+        let x = self.ba_map.get(t).cloned().unwrap();
+        if x.0.is_empty() {
             panic!("Unsupported type: {t}");
         }
         x
@@ -345,8 +345,8 @@ impl Generate for OCaml {
             dim_args.push(format!("(Int64.of_int dims.({i}))"));
         }
 
-        let ocaml_elemtype = self.get_type(&elemtype);
-        let ba_elemtype = self.get_ba_type(&elemtype);
+        let (ocaml_elemtype, ba_elemtype) = self.get_ba_type(&elemtype);
+        let ocaml_ctype = self.get_ctype(&elemtype);
 
         writeln!(
             config.output_file,
@@ -358,6 +358,7 @@ impl Generate for OCaml {
             ocaml_elemtype = ocaml_elemtype,
             ba_elemtype = ba_elemtype,
             ba_kind = ba_kind(&ba_elemtype),
+            ocaml_ctype = ocaml_ctype,
         )?;
 
         writeln!(

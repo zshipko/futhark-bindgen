@@ -6,10 +6,13 @@ module {module_name} = struct
   let kind = {ba_kind}
 
   let free t = ignore (Bindings.futhark_free_{elemtype}_{rank}d t.ctx.Context.handle t.ptr)
+
+  let cast x =
+    coerce (ptr void) (ptr {ocaml_ctype}) (to_voidp x)
   
   let v ctx ba =
     let dims = Genarray.dims ba in
-    let ptr = Bindings.futhark_new_{elemtype}_{rank}d ctx.Context.handle (bigarray_start genarray ba) {dim_args} in
+    let ptr = Bindings.futhark_new_{elemtype}_{rank}d ctx.Context.handle (cast @@ bigarray_start genarray ba) {dim_args} in
     if is_null ptr then raise (Error NullPtr);
     Context.auto_sync ctx;
     let t = {{ ptr; ctx; shape = dims; }} in
@@ -20,7 +23,7 @@ module {module_name} = struct
     let a = Array.fold_left ( * ) 1 t.shape in
     let b = Array.fold_left ( * ) 1 dims in
     if (a <> b) then raise (Error (InvalidShape (a, b)));
-    let rc = Bindings.futhark_values_{elemtype}_{rank}d t.ctx.Context.handle t.ptr (bigarray_start genarray ba) in
+    let rc = Bindings.futhark_values_{elemtype}_{rank}d t.ctx.Context.handle t.ptr (cast @@ bigarray_start genarray ba) in
     Context.auto_sync t.ctx;
     if rc <> 0 then raise (Error (Code rc))
 

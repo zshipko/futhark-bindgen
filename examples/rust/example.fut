@@ -52,3 +52,6 @@ entry sinking1 (as: []i32) (bs: []i32) (cs: []i32) (ds: []i32) (es: []i32) =
 
 entry count_lines (input: []u8) : i64 =
   foldl (\acc x -> if x == 10 then acc + 1 else acc) 0i64 input
+
+entry count_true (input: []bool) : i64 =
+  foldl (\acc x -> if x then acc + 1 else acc) 0i64 input

@@ -39,5 +39,11 @@ let () =
   let data = Array1.of_array Int8_unsigned C_layout arr |> genarray_of_array1 in
   let arr = Array_u8_1d.v ctx data in
   let n = count_lines ctx arr in
-  assert (n = 4L)
+  assert (n = 4L);
 
+  (* count_true *)
+  let b = Array.init 10 (fun i -> if i mod 2 = 0 then 1 else 0) in
+  let data = Array1.of_array Int8_unsigned C_layout b |> genarray_of_array1 in
+  let arr = Array_bool_1d.v ctx data in
+  let n = count_true ctx arr in
+  assert (n = Int64.of_int @@ Array.fold_left (+) 0 b)
