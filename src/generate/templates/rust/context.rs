@@ -69,6 +69,7 @@ impl Options {{
     {backend_options}
 }}
 
+/// Futhark context
 pub struct Context {{
     config: *mut futhark_context_config,
     context: *mut futhark_context,
@@ -77,6 +78,7 @@ pub struct Context {{
 }}
 
 impl Context {{
+    /// Create a new context with default options
     pub fn new() -> std::result::Result<Self, Error> {{
         unsafe {{
             let config = futhark_context_config_new();
@@ -90,6 +92,7 @@ impl Context {{
         }}
     }}
 
+    /// Create a new context with custom options
     pub fn new_with_options(options: Options) -> std::result::Result<Self, Error> {{
         unsafe {{
             let config = futhark_context_config_new();
@@ -115,16 +118,19 @@ impl Context {{
         }}
     }}
 
+    /// Sync the context, if `auto_sync` is enabled this shouldn't be needed
     pub fn sync(&self) {{
         unsafe {{ futhark_context_sync(self.context); }}
     }}
 
+    /// Sync if `auto_sync` is enabled, otherwise this is a noop
     pub fn auto_sync(&self) {{
         if self.auto_sync {{
             self.sync();
         }}
     }}
 
+    /// Clear Futhark caches
     pub fn clear_caches(&self) -> std::result::Result<(), Error> {{
         let rc = unsafe {{
             futhark_context_clear_caches(self.context)
@@ -133,18 +139,21 @@ impl Context {{
         Ok(())
     }}
 
+    /// Pause Futhark profiling
     pub fn pause_profiling(&self) {{
         unsafe {{
             futhark_context_pause_profiling(self.context);
         }}
     }}
 
+    /// Resume profiling
     pub fn unpause_profiling(&self) {{
         unsafe {{
             futhark_context_unpause_profiling(self.context);
         }}
     }}
 
+    /// Get the last error message or None
     pub fn get_error(&self) -> std::option::Option<String> {{
         unsafe {{
             let s = futhark_context_get_error(self.context);
@@ -154,7 +163,6 @@ impl Context {{
             Some(r)
         }}
     }}
-
 
     pub fn report(&self) -> std::option::Option<String> {{
         unsafe {{

@@ -1,4 +1,5 @@
 impl<'a> {rust_type}<'a> {{
+    /// Get {field_name} field
     pub fn get_{field_name}(&self) -> Result<{rust_field_type}, Error> {{
         let mut out = std::mem::MaybeUninit::zeroed();
         let rc = unsafe {{

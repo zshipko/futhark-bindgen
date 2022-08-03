@@ -11,6 +11,7 @@ extern "C" {{
     ) -> std::os::raw::c_int;
 }}
 
+/// Futhark type
 pub struct {rust_type}<'a> {{
     data: *mut {futhark_type},
     ctx: &'a Context,

@@ -4,6 +4,7 @@ struct {futhark_type} {{
     _private: [u8; 0]
 }}
 
+/// Array type with {rank} dimensions and {elemtype} elements
 pub struct {rust_type}<'a> {{
     ptr: *mut {futhark_type},
     pub shape: [i64; {rank}],
@@ -11,6 +12,7 @@ pub struct {rust_type}<'a> {{
 }}
 
 impl<'a> {rust_type}<'a> {{
+    /// Create a new array of `dims` dimensions and initialize it with the values from `data`
     pub fn new(ctx: &'a Context, dims: [i64; {rank}], data: impl AsRef<[{elemtype}]>) -> std::result::Result<Self, Error> {{
         let size: i64 = dims.iter().product();
         let data = data.as_ref();
@@ -29,10 +31,12 @@ impl<'a> {rust_type}<'a> {{
         }})
     }}
 
+    /// Get the array shape
     pub fn shape(&self) -> &[i64; {rank}] {{
         &self.shape
     }}
 
+    /// Load values back into a slice
     pub fn values(&self, mut data: impl AsMut<[{elemtype}]>) -> std::result::Result<(), Error> {{
         let size: i64 = self.shape.iter().product();
         let data = data.as_mut();
@@ -49,6 +53,7 @@ impl<'a> {rust_type}<'a> {{
         Ok(())
     }}
 
+    /// Load values into a `Vec`
     pub fn get(&self) -> std::result::Result<Vec<{elemtype}>, Error> {{
         let size: i64 = self.shape.iter().product();
         let mut vec = vec![{elemtype}::default(); size as usize];

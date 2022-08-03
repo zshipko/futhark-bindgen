@@ -1,4 +1,5 @@
 impl Context {{
+    /// Entry point: {entry_name}
     pub fn {entry_name}(&self, {entry_params}) -> Result<{entry_return_type}, Error> {{
         {out_decl}
         let rc = unsafe {{

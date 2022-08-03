@@ -1,4 +1,5 @@
 impl<'a> {rust_type}<'a> {{
+    /// Create new {rust_type}
     pub fn new(ctx: &'a Context, {new_params}) -> std::result::Result<Self, Error> {{
         unsafe {{
             let mut out = std::ptr::null_mut();
