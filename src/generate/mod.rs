@@ -46,35 +46,35 @@ impl Config {
 
 pub trait Generate {
     /// Iterates through the manifest and generates code
-    fn generate(&mut self, library: &Package, config: &mut Config) -> Result<(), Error> {
-        self.bindings(library, config)?;
-        for (name, ty) in &library.manifest.types {
+    fn generate(&mut self, pkg: &Package, config: &mut Config) -> Result<(), Error> {
+        self.bindings(pkg, config)?;
+        for (name, ty) in &pkg.manifest.types {
             match ty {
                 manifest::Type::Array(ty) => {
-                    self.array_type(library, config, name, ty)?;
+                    self.array_type(pkg, config, name, ty)?;
                 }
                 manifest::Type::Opaque(ty) => {
-                    self.opaque_type(library, config, name, ty)?;
+                    self.opaque_type(pkg, config, name, ty)?;
                 }
             }
         }
 
-        for (name, entry) in &library.manifest.entry_points {
-            self.entry(library, config, name, entry)?;
+        for (name, entry) in &pkg.manifest.entry_points {
+            self.entry(pkg, config, name, entry)?;
         }
         self.format(&config.output_path)?;
         Ok(())
     }
 
     /// Step 1: generate any setup code or low-level bindings
-    fn bindings(&mut self, _library: &Package, _config: &mut Config) -> Result<(), Error> {
+    fn bindings(&mut self, _pkg: &Package, _config: &mut Config) -> Result<(), Error> {
         Ok(())
     }
 
     /// Step 2: generate code for array types
     fn array_type(
         &mut self,
-        library: &Package,
+        pkg: &Package,
         config: &mut Config,
         name: &str,
         ty: &manifest::ArrayType,
@@ -83,7 +83,7 @@ pub trait Generate {
     /// Step 3: generate code for opaque types
     fn opaque_type(
         &mut self,
-        library: &Package,
+        pkg: &Package,
         config: &mut Config,
         name: &str,
         ty: &manifest::OpaqueType,
@@ -92,7 +92,7 @@ pub trait Generate {
     /// Generate code for entry functions
     fn entry(
         &mut self,
-        library: &Package,
+        pkg: &Package,
         config: &mut Config,
         name: &str,
         entry: &manifest::Entry,

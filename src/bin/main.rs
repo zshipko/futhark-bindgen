@@ -35,7 +35,7 @@ struct Libs {
         option,
         default = "Backend::C",
         from_str_fn(parse_backend),
-        description = "futhark backend: c, cuda, opencl, multicore, python, pyopencl"
+        description = "futhark backend: c, cuda, opencl, multicore"
     )]
     backend: Backend,
 }
@@ -53,7 +53,7 @@ struct Run {
         option,
         default = "Backend::C",
         from_str_fn(parse_backend),
-        description = "futhark backend: c, cuda, opencl, multicore, python, pyopencl"
+        description = "futhark backend: c, cuda, opencl, multicore"
     )]
     backend: Backend,
 
@@ -84,20 +84,10 @@ fn main() -> Result<(), Error> {
             if let Some(exe) = args.compiler {
                 compiler = compiler.with_executable_name(exe);
             }
-            let lib = match compiler.compile()? {
-                Some(l) => l,
-                None => {
-                    let py_file = args.input.with_extension("py");
-                    if args.output != py_file {
-                        std::fs::copy(py_file, args.output)?;
-                    }
-                    return Ok(());
-                }
-            };
-
+            let pkg = compiler.compile()?;
             let mut config = Config::new(args.output)?;
             let mut gen = config.detect().expect("Unable to detect output language");
-            gen.generate(&lib, &mut config)?;
+            gen.generate(&pkg, &mut config)?;
         }
         Commands::Libs(args) => {
             args.backend

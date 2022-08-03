@@ -89,8 +89,7 @@ pub fn build(
     let lib = Compiler::new(backend, src)
         .with_output_dir(out)
         .compile()
-        .expect("Compilation failed")
-        .expect("Unable to find manifest file");
+        .expect("Compilation failed");
 
     let out = std::path::PathBuf::from(std::env::var("OUT_DIR").unwrap()).join(dest);
     let mut config = Config::new(out).expect("Unable to configure codegen");

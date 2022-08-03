@@ -50,7 +50,7 @@ impl Compiler {
     /// Compile the package
     ///
     /// This will generate a C file, C header file and manifest
-    pub fn compile(&self) -> Result<Option<Package>, Error> {
+    pub fn compile(&self) -> Result<Package, Error> {
         // Create -o argument
         let output = &self
             .output_dir
@@ -73,11 +73,11 @@ impl Compiler {
         let manifest = Manifest::parse_file(output.with_extension("json"))?;
         let c_file = output.with_extension("c");
         let h_file = output.with_extension("h");
-        Ok(Some(Package {
+        Ok(Package {
             manifest,
             c_file,
             h_file,
             src: self.src.clone(),
-        }))
+        })
     }
 }
