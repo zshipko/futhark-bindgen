@@ -61,7 +61,7 @@ impl Generate for Rust {
         let rank = a.rank;
 
         let futhark_type = convert_struct_name(&a.ctype).to_string();
-        let rust_type = format!("Array{}D{rank}", elemtype.to_ascii_uppercase(),);
+        let rust_type = format!("Array{}D{rank}", first_uppercase(elemtype));
         let info = ArrayInfo {
             futhark_type,
             rust_type,

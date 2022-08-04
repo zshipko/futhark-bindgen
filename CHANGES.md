@@ -1,3 +1,7 @@
+## 0.2.1
+
+- Fix capitalization of Bool in Rust generated code
+
 ## 0.2.0
 
 - Added more methods to `Generate` trait to make it easier to add new
