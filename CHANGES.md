@@ -1,3 +1,7 @@
+## Unreleased
+
+- Automatically add `rerun-if-changed` to Rust build script
+
 ## 0.2.1
 
 - Fix capitalization of Bool in Rust generated code

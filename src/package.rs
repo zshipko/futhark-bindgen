@@ -58,6 +58,8 @@ impl Package {
                 .warnings(false)
                 .compile(&name);
         }
+
+        println!("cargo:rerun-if-changed={}", self.src.display());
         println!("cargo:rustc-link-lib={name}");
 
         let libs = self.manifest.backend.required_c_libs();
