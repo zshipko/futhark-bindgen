@@ -5,8 +5,7 @@ let () =
   (* binary_search *)
   let ctx = Context.v ~debug:true ~profile:true ~log:true () in
   let data = [| 1L; 2L; 3L; 4L; 5L; 7L; 8L |] in
-  let data' = Array1.of_array Int64 C_layout data |> genarray_of_array1 in
-  let arr = Array_i64_1d.v ctx data' in
+  let arr = Array_i64_1d.of_array ctx [| 7 |] data in
   let index = binary_search ctx arr 6L in
   assert (Int64.equal index 5L);
   Array_i64_1d.free arr;
@@ -43,7 +42,6 @@ let () =
 
   (* count_true *)
   let b = Array.init 10 (fun i -> if i mod 2 = 0 then 1 else 0) in
-  let data = Array1.of_array Int8_unsigned C_layout b |> genarray_of_array1 in
-  let arr = Array_bool_1d.v ctx data in
+  let arr = Array_bool_1d.of_array ctx [| Array.length b |] b in
   let n = count_true ctx arr in
   assert (n = Int64.of_int @@ Array.fold_left (+) 0 b)

@@ -19,6 +19,8 @@ module {module_name}: sig
   val get: t -> ({ocaml_elemtype}, {ba_elemtype}, Bigarray.c_layout) Bigarray.Genarray.t
   (** Get a new bigarray with the values loaded *)
   
+  val of_array: Context.t -> int array -> ({ocaml_elemtype}) array -> t 
+  
   val free: t -> unit
   (** Free the array *)
 end

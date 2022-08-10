@@ -35,6 +35,14 @@ module {module_name} = struct
 
   let shape t = t.shape
 
+  let of_array ctx dims arr =
+    let len = Array.fold_left ( * ) 1 dims in
+    assert (len = Array.length arr);
+    let arr = Array1.of_array kind C_layout arr in
+    let g = genarray_of_array1 arr in
+    let g = reshape g dims in
+    v ctx g
+
   let ptr_shape ctx ptr =
     let s = Bindings.futhark_shape_{elemtype}_{rank}d ctx ptr in
     Array.init {rank} (fun i -> Int64.to_int !@ (s +@ i))

@@ -1,6 +1,7 @@
-## Unreleased
+## 0.2.2
 
 - Automatically add `rerun-if-changed` to Rust build script
+- Add `of_array` to generated OCaml `Array_*_*` types
 
 ## 0.2.1
 
