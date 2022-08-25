@@ -1,3 +1,7 @@
+## 0.2.3
+
+- Add `of_array1`, `get_array1` and `values_array1` to OCaml Array bindings
+
 ## 0.2.2
 
 - Automatically add `rerun-if-changed` to Rust build script
