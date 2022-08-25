@@ -28,7 +28,7 @@ let () =
   let arr = Array_f32_1d.of_array ctx [| Array.length data3 |] data3 in
   let tup = Tup.v ctx number arr in
   let out = tup_mul ctx tup in
-  let out' = Array_f32_1d.get out |> array1_of_genarray in
+  let out' = Array_f32_1d.get_array1 out in
   for i = 0 to 9 do
     assert (out'.{i} = Array.get data3 i *. (Number.get_x (Tup.get_0 tup)))
   done;
@@ -36,8 +36,8 @@ let () =
   (* count_lines *)
   let text = "this\nis\na\ntest\n" in
   let arr = Array.init (String.length text) (fun i -> String.get text i |> int_of_char) in
-  let data = Array1.of_array Int8_unsigned C_layout arr |> genarray_of_array1 in
-  let arr = Array_u8_1d.v ctx data in
+  let data = Array1.of_array Int8_unsigned C_layout arr in
+  let arr = Array_u8_1d.of_array1 ctx [|Array.length arr|] data in
   let n = count_lines ctx arr in
   assert (n = 4L);
 

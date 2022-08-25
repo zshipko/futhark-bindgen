@@ -27,21 +27,35 @@ module {module_name} = struct
     Context.auto_sync t.ctx;
     if rc <> 0 then raise (Error (Code rc))
 
+  let values_array1 t ba =
+    let ba = genarray_of_array1 ba in
+    let ba = reshape ba t.shape in
+    values t ba
+
   let get t =
     let dims = t.shape in
     let g = Genarray.create kind C_layout dims in
     values t g;
     g
 
+  let get_array1 t =
+    let len = Array.fold_left ( * ) 1 t.shape in
+    let g = Array1.create kind C_layout len in
+    values_array1 t g;
+    g
+
   let shape t = t.shape
 
-  let of_array ctx dims arr =
+  let of_array1 ctx dims arr =
     let len = Array.fold_left ( * ) 1 dims in
-    assert (len = Array.length arr);
-    let arr = Array1.of_array kind C_layout arr in
+    assert (len = Array1.dim arr);
     let g = genarray_of_array1 arr in
     let g = reshape g dims in
     v ctx g
+
+  let of_array ctx dims arr =
+    let arr = Array1.of_array kind C_layout arr in
+    of_array1 ctx dims arr
 
   let ptr_shape ctx ptr =
     let s = Bindings.futhark_shape_{elemtype}_{rank}d ctx ptr in
