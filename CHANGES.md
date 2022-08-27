@@ -1,3 +1,7 @@
+## 0.2.4
+
+- Use `-O3` flag when compiling C files
+
 ## 0.2.3
 
 - Add `of_array1`, `get_array1` and `values_array1` to OCaml Array bindings
