@@ -1,5 +1,5 @@
 (rule
-    (targets example.c example.ml example.mli)
+    (targets example.c example.h example.ml example.mli)
     (deps example.fut)
      (action
          (run cargo run -- run example.fut example.ml)))

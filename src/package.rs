@@ -36,6 +36,7 @@ impl Package {
                 .arg("--pic")
                 .arg("--addressing=64")
                 .arg("--target=host")
+                .arg("-O3")
                 .status()
                 .expect("Unable to run ispc");
 
@@ -46,6 +47,7 @@ impl Package {
                 .flag("-pthread")
                 .flag("-lm")
                 .flag("-std=c99")
+                .flag("-O3")
                 .extra_warnings(false)
                 .warnings(false)
                 .compile(&name);
@@ -53,6 +55,7 @@ impl Package {
             cc::Build::new()
                 .flag("-std=c99")
                 .flag("-Wno-unused-parameter")
+                .flag("-O3")
                 .file(&self.c_file)
                 .extra_warnings(false)
                 .warnings(false)
