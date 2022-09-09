@@ -17,15 +17,8 @@ pub struct Package {
 }
 
 impl Package {
-    /// Link the package
-    ///
-    /// Note: This should only be used in `build.rs`
     #[cfg(feature = "build")]
-    pub fn link(&self) {
-        let project = std::env::var("CARGO_PKG_NAME").unwrap();
-
-        let name = format!("futhark_generate_{project}");
-
+    fn build(&self, libname: &str) {
         if self.manifest.backend == Backend::ISPC {
             let kernels = self.c_file.with_extension("kernels.ispc");
             let dest = kernels.with_extension("o");
@@ -50,7 +43,7 @@ impl Package {
                 .flag("-O3")
                 .extra_warnings(false)
                 .warnings(false)
-                .compile(&name);
+                .compile(libname);
         } else {
             cc::Build::new()
                 .flag("-std=c99")
@@ -59,8 +52,17 @@ impl Package {
                 .file(&self.c_file)
                 .extra_warnings(false)
                 .warnings(false)
-                .compile(&name);
+                .compile(libname);
         }
+    }
+    /// Link the package
+    ///
+    /// Note: This should only be used in `build.rs`
+    #[cfg(feature = "build")]
+    pub fn link(&self) {
+        let project = std::env::var("CARGO_PKG_NAME").unwrap();
+        let name = format!("futhark_generate_{project}");
+        self.build(&name);
 
         println!("cargo:rerun-if-changed={}", self.src.display());
         println!("cargo:rustc-link-lib={name}");

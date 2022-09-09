@@ -59,6 +59,26 @@ impl Backend {
         }
     }
 
+    /// Return the backend specified by the given name if valid
+    pub fn from_name(name: &str) -> Option<Backend> {
+        match name.to_ascii_lowercase().as_str() {
+            "c" => Some(Backend::C),
+            "cuda" => Some(Backend::CUDA),
+            "opencl" => Some(Backend::OpenCL),
+            "multicore" => Some(Backend::Multicore),
+            "ispc" => Some(Backend::ISPC),
+            _ => None,
+        }
+    }
+
+    /// Get the backend from the `FUTHARK_BACKEND` environment variable
+    pub fn from_env() -> Option<Backend> {
+        match std::env::var("FUTHARK_BACKEND") {
+            Ok(name) => Backend::from_name(&name),
+            Err(_) => None,
+        }
+    }
+
     /// Returns the C libraries that need to be linked for a backend
     pub fn required_c_libs(&self) -> &'static [&'static str] {
         match self {
@@ -91,8 +111,7 @@ pub fn build(
         .compile()
         .expect("Compilation failed");
 
-    let out = std::path::PathBuf::from(std::env::var("OUT_DIR").unwrap()).join(dest);
-    let mut config = Config::new(out).expect("Unable to configure codegen");
+    let mut config = Config::new(&dest).expect("Unable to configure codegen");
     let mut gen = config.detect().expect("Invalid output language");
     gen.generate(&lib, &mut config)
         .expect("Code generation failed");

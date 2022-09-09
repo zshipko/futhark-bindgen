@@ -1,3 +1,7 @@
+## 0.2.5
+
+- Add `Backend::from_env`
+
 ## 0.2.4
 
 - Use `-O3` flag when compiling C files
