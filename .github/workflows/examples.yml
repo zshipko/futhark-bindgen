@@ -23,7 +23,7 @@ jobs:
 
     - name: Install deps
       run: curl https://futhark-lang.org/releases/futhark-nightly-linux-x86_64.tar.xz | tar xJ
-
+      
     - name: Set Opam env
       run: opam env | tr '\n' ' ' >> $GITHUB_ENV
 
@@ -50,7 +50,7 @@ jobs:
         ocaml-compiler: ${{ matrix.ocaml-compiler }}
 
     - name: Install deps
-      run: brew update && brew install futhark
+      run: brew update && brew install futhark libffi
 
     - name: Set Opam env
       run: opam env | tr '\n' ' ' >> $GITHUB_ENV
