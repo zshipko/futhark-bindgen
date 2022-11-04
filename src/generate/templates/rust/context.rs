@@ -5,6 +5,18 @@ pub enum Error {{
     InvalidShape,
 }}
 
+impl std::fmt::Display for Error {{
+    fn fmt(&self, fmt: &mut std::fmt::Formatter) -> std::fmt::Result {{
+        match self {{
+            Error::Code(code) => write!(fmt, "Futhark error code: {{code}}"),
+            Error::NullPtr => write!(fmt, "NULL pointer encountered"),
+            Error::InvalidShape => write!(fmt, "Invalid image shape"),
+        }}
+    }} 
+}}
+
+impl std::error::Error for Error {{}}
+
 #[derive(Debug, Clone)]
 pub struct Options {{
     debug: bool,
