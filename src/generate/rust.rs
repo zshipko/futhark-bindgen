@@ -335,7 +335,7 @@ impl Generate for Rust {
     }
 
     fn format(&mut self, path: &std::path::Path) -> Result<(), Error> {
-        let _ = std::process::Command::new("rustfmt").arg(&path).status();
+        let _ = std::process::Command::new("rustfmt").arg(path).status();
         Ok(())
     }
 }

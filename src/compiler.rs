@@ -59,7 +59,7 @@ impl Compiler {
         let ok = std::process::Command::new(&self.exe)
             .arg(self.backend.to_str())
             .args(&self.extra_args)
-            .args(&["-o", &output.to_string_lossy()])
+            .args(["-o", &output.to_string_lossy()])
             .arg("--lib")
             .arg(&self.src)
             .status()?
