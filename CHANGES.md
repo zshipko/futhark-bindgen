@@ -1,3 +1,7 @@
+## 0.2.6 (Unreleased)
+
+- Implement `std::error::Error` for generated `Error` type
+
 ## 0.2.5
 
 - Add `Backend::from_env`
