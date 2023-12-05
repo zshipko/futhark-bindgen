@@ -45,6 +45,12 @@ pub enum Backend {
     /// and a C compiler
     #[serde(rename = "ispc")]
     ISPC,
+
+    /// HIP backend: `futhark hip`
+    ///
+    /// Requires a C compiler
+    #[serde(rename = "hip")]
+    HIP,
 }
 
 impl Backend {
@@ -56,6 +62,7 @@ impl Backend {
             Backend::OpenCL => "opencl",
             Backend::Multicore => "multicore",
             Backend::ISPC => "ispc",
+            Backend::HIP => "hip",
         }
     }
 
@@ -85,6 +92,7 @@ impl Backend {
             Backend::CUDA => &["cuda", "cudart", "nvrtc", "m"],
             Backend::OpenCL => &["OpenCL", "m"],
             Backend::Multicore | Backend::ISPC => &["pthread", "m"],
+            Backend::HIP => &["hiprtc", "amdhip64"],
             _ => &[],
         }
     }
