@@ -103,7 +103,7 @@ pub trait Generate {
 }
 
 fn rust() -> Box<impl Generate> {
-    Box::new(Rust::default())
+    Box::<Rust>::default()
 }
 
 fn ocaml(config: &Config) -> Box<impl Generate> {

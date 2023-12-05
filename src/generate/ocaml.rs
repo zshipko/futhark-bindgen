@@ -93,7 +93,7 @@ impl OCaml {
             .collect();
 
         let mli_path = config.output_path.with_extension("mli");
-        let mli_file = std::fs::File::create(&mli_path)?;
+        let mli_file = std::fs::File::create(mli_path)?;
         Ok(OCaml {
             typemap,
             ba_map,
