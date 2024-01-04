@@ -5,7 +5,10 @@ module {module_name} = struct
   
   let kind = {ba_kind}
 
-  let free t = ignore (Bindings.futhark_free_{elemtype}_{rank}d t.ctx.Context.handle t.ptr)
+  let free t =
+    if not t.array_free then
+      let () = ignore (Bindings.futhark_free_{elemtype}_{rank}d t.ctx.Context.handle t.ptr) in
+      t.array_free <- true
 
   let cast x =
     coerce (ptr void) (ptr {ocaml_ctype}) (to_voidp x)
@@ -15,7 +18,7 @@ module {module_name} = struct
     let ptr = Bindings.futhark_new_{elemtype}_{rank}d ctx.Context.handle (cast @@ bigarray_start genarray ba) {dim_args} in
     if is_null ptr then raise (Error NullPtr);
     Context.auto_sync ctx;
-    let t = {{ ptr; ctx; shape = dims; }} in
+    let t = {{ ptr; ctx; shape = dims; array_free = false }} in
     Gc.finalise free t; t
 
   let values t ba =
@@ -64,7 +67,7 @@ module {module_name} = struct
   let of_ptr ctx ptr =
     if is_null ptr then raise (Error NullPtr);
     let shape = ptr_shape ctx.Context.handle ptr in
-    let t = {{ ptr; ctx; shape }} in
+    let t = {{ ptr; ctx; shape; array_free = false }} in
     Gc.finalise free t; t
     
   let _ = of_ptr

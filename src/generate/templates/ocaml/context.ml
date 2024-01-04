@@ -1,13 +1,14 @@
 open Bigarray
 
 module Context = struct
-  type t = {{ handle: unit ptr; config: unit ptr; cache_file: string option; auto_sync: bool }}
+  type t = {{ handle: unit ptr; config: unit ptr; cache_file: string option; auto_sync: bool; mutable context_free: bool }}
 
-  let free t = 
-    ignore (Bindings.futhark_context_sync t.handle);
-    ignore (Bindings.futhark_context_free t.handle);
-    ignore (Bindings.futhark_context_config_free t.config)
-
+  let free t =
+    if not t.context_free then
+      let () = ignore (Bindings.futhark_context_sync t.handle) in
+      let () = ignore (Bindings.futhark_context_free t.handle) in
+      let () = ignore (Bindings.futhark_context_config_free t.config) in
+      t.context_free <- true
 
   let v ?(debug = false) ?(log = false) ?(profile = false) ?cache_file ?(auto_sync = true) {extra_param} () =
     let config = Bindings.futhark_context_config_new () in
@@ -19,7 +20,7 @@ module Context = struct
     Option.iter (Bindings.futhark_context_config_set_cache_file config) cache_file;
     let handle = Bindings.futhark_context_new config in
     if is_null handle then (ignore @@ Bindings.futhark_context_config_free config; raise (Error NullPtr));
-    let t = {{ handle; config; cache_file; auto_sync }} in
+    let t = {{ handle; config; cache_file; auto_sync; context_free = false }} in
     Gc.finalise free t; t
 
   let sync t =
@@ -48,5 +49,5 @@ module Context = struct
   let unpause_profiling t = Bindings.futhark_context_unpause_profiling t.handle
 end
 
-type futhark_array = {{ ptr: unit ptr; shape: int array; ctx: Context.t }}
-type opaque = {{ opaque_ptr: unit ptr; opaque_ctx: Context.t }}
+type futhark_array = {{ ptr: unit ptr; shape: int array; ctx: Context.t; mutable array_free: bool }}
+type opaque = {{ opaque_ptr: unit ptr; opaque_ctx: Context.t; mutable opaque_free: bool }}
