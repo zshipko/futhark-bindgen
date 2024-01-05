@@ -1,6 +1,11 @@
-## 0.2.6 (Unreleased)
+## 0.2.7
+
+- Fixed possible double frees when GC is triggered after `free` has already been called
+
+## 0.2.6
 
 - Implement `std::error::Error` for generated `Error` type
+- Added support for HIP backend 
 
 ## 0.2.5
 

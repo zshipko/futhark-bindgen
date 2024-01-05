@@ -1,6 +1,16 @@
 open Example
 open Bigarray
 
+(* Try to trigger garbage collector *)
+let () =
+  let ctx = Context.v
+              ~debug:false ~log:false ~profile:false ~auto_sync:true () in
+  for i = 0 to 1000 do
+    let a = Genarray.init Float64 c_layout [| 100; 100 |] (fun _ -> Float.of_int i) in
+    let p = Array_f64_2d.v ctx a in
+    Array_f64_2d.free p
+  done
+
 let () =
   (* binary_search *)
   let ctx = Context.v ~debug:true ~profile:true ~log:true () in
