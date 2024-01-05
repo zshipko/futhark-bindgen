@@ -3,7 +3,7 @@
   let _ = t
 
   let free t = 
-    if not t.opaque_free then
+    if not t.opaque_free && not t.opaque_ctx.Context.context_free then
       let () = ignore (Bindings.{free_fn} t.opaque_ctx.Context.handle t.opaque_ptr) in
       t.opaque_free <- true
 

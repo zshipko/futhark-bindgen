@@ -22,6 +22,13 @@ let () =
   Array_f64_2d.free out;
   Array_f64_2d.free arr;
 
+  let () = 
+    try
+      let _ = Array_f64_2d.get out in
+      assert false
+    with Error (UseAfterFree `array) -> print_endline "Detected use after free"
+  in
+
   (* tup_mul *)
   let number = Number.v ctx 2.5 in
   let data3 = [| 0.0; 1.0; 2.0; 3.0; 4.0; 5.0; 6.0; 7.0; 8.0; 9.0 |] in

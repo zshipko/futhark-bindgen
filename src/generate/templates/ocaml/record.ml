@@ -1,4 +1,5 @@
   let v ctx {new_params} =
+    check_use_after_free `context ctx.Context.context_free;
     let ptr = allocate (ptr void) null in
     let rc = Bindings.{new_fn} ctx.Context.handle ptr {new_call_args} in
     Context.auto_sync ctx;

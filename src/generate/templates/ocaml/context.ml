@@ -19,11 +19,16 @@ module Context = struct
     {extra_line}
     Option.iter (Bindings.futhark_context_config_set_cache_file config) cache_file;
     let handle = Bindings.futhark_context_new config in
-    if is_null handle then (ignore @@ Bindings.futhark_context_config_free config; raise (Error NullPtr));
-    let t = {{ handle; config; cache_file; auto_sync; context_free = false }} in
-    Gc.finalise free t; t
+    if is_null handle then 
+      let () = ignore @@ Bindings.futhark_context_config_free config in
+      raise (Error NullPtr)
+    else
+      let t = {{ handle; config; cache_file; auto_sync; context_free = false }} in
+      let () = Gc.finalise free t in
+      t
 
   let sync t =
+    check_use_after_free `context t.context_free;
     let rc = Bindings.futhark_context_sync t.handle in
     if rc <> 0 then raise (Error (Code rc))
 
@@ -31,6 +36,7 @@ module Context = struct
     if t.auto_sync then sync t
   
   let clear_caches t =
+    check_use_after_free `context t.context_free;
     let rc = Bindings.futhark_context_clear_caches t.handle in
     if rc <> 0 then raise (Error (Code rc))
 
@@ -41,12 +47,21 @@ module Context = struct
       let s = String.init len (fun i -> !@(ptr +@ i)) in
       let () = Bindings.free (coerce (Ctypes.ptr Ctypes.char) (Ctypes.ptr void) ptr) in Some s
 
-  let get_error t = let ptr = Bindings.futhark_context_get_error t.handle in string_opt_of_ptr ptr
+  let get_error t = 
+    check_use_after_free `context t.context_free;
+    let ptr = Bindings.futhark_context_get_error t.handle in string_opt_of_ptr ptr
 
-  let report t = let ptr = Bindings.futhark_context_report t.handle in string_opt_of_ptr ptr
+  let report t = 
+    check_use_after_free `context t.context_free;
+    let ptr = Bindings.futhark_context_report t.handle in string_opt_of_ptr ptr
 
-  let pause_profiling t = Bindings.futhark_context_pause_profiling t.handle
-  let unpause_profiling t = Bindings.futhark_context_unpause_profiling t.handle
+  let pause_profiling t = 
+    check_use_after_free `context t.context_free;
+    Bindings.futhark_context_pause_profiling t.handle
+
+  let unpause_profiling t =
+    check_use_after_free `context t.context_free;
+    Bindings.futhark_context_unpause_profiling t.handle
 end
 
 type futhark_array = {{ ptr: unit ptr; shape: int array; ctx: Context.t; mutable array_free: bool }}
