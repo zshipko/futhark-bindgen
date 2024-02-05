@@ -583,7 +583,7 @@ impl Generate for OCaml {
         let return_type = if return_type.is_empty() {
             "unit".to_string()
         } else {
-            return_type.join(", ")
+            return_type.join(" * ")
         };
         writeln!(
             self.mli_file,
