@@ -30,6 +30,7 @@ module {module_name} = struct
     let b = Array.fold_left ( * ) 1 dims in
     if (a <> b) then raise (Error (InvalidShape (a, b)));
     let rc = Bindings.futhark_values_{elemtype}_{rank}d t.ctx.Context.handle t.ptr (cast @@ bigarray_start genarray ba) in
+    let _ = ba in
     Context.auto_sync t.ctx;
     if rc <> 0 then raise (Error (Code rc))
 

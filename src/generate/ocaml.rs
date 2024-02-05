@@ -437,6 +437,7 @@ impl Generate for OCaml {
             config.output_file,
             include_str!("templates/ocaml/record.ml"),
             new_params = new_params.join(" "),
+            new_tmp = new_params.join(", "),
             new_fn = record.new,
             new_call_args = new_call_args.join(" "),
         )?;
