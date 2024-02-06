@@ -36,7 +36,7 @@ let () =
     try
       let _ = Array_f64_2d.get out in
       assert false
-    with Error (UseAfterFree `array) -> print_endline "Detected use after free"
+    with Error (UseAfterFree `array) -> print_endline "Detected array use after free"
   in
 
   (* tup_mul *)
@@ -49,6 +49,14 @@ let () =
   for i = 0 to 9 do
     assert (out'.{i} = Array.get data3 i *. (Number.get_x (Tup.get_0 tup)))
   done;
+
+  Tup.free tup;
+  let () = 
+    try
+      let _ = Tup.get_0 tup in
+      assert false
+    with Error (UseAfterFree `opaque) -> print_endline "Detected opaque use after free"
+  in
 
   (* count_lines *)
   let text = "this\nis\na\ntest\n" in
