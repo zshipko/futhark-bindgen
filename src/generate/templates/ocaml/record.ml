@@ -1,10 +1,7 @@
   let v ctx {new_params} =
     check_use_after_free `context ctx.Context.context_free;
-    let ptr = allocate (ptr void) null in
+    let ptr = allocate ~finalise:(free' ctx) (ptr void) null in
     let rc = Bindings.{new_fn} ctx.Context.handle ptr {new_call_args} in
     if rc <> 0 then raise (Error (Code rc));
     Context.auto_sync ctx;
-    let opaque_ptr = !@ptr in
-    let t = {{ opaque_ptr; opaque_ctx = ctx; opaque_free = false }} in
-    set_managed ptr t;
-    Gc.finalise free t; t
+    {{ opaque_ptr = ptr; opaque_ctx = ctx }}

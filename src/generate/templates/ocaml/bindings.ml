@@ -36,11 +36,11 @@ type error =
 
 exception Error of error
 
-let check_use_after_free t b = if b then raise (Error (UseAfterFree t))
-
 let set_managed (p: 'a Ctypes_static.ptr) x =
   match p with
   | Ctypes_static.CPointer fat -> Ctypes_ptr.Fat.set_managed fat (Some (Obj.repr x))
+
+let check_use_after_free t b = if b then raise (Error (UseAfterFree t))
 
 let () = Printexc.register_printer (function
   | Error (InvalidShape (a, b)) -> Some (Printf.sprintf "futhark error: invalid shape, expected %d but got %d" a b)
@@ -48,7 +48,7 @@ let () = Printexc.register_printer (function
   | Error (Code c) -> Some (Printf.sprintf "futhark error: code %d" c) 
   | Error (UseAfterFree `context) -> Some "futhark: context used after beeing freed"
   | Error (UseAfterFree `array) -> Some "futhark: array used after beeing freed"
-  | Error (UseAfterFree `opaque) -> Some "futhark: opqaue value used after beeing freed"
+  | Error (UseAfterFree `opaque) -> Some "futhark: opaque value used after beeing freed"
   | _ -> None)
 
 
