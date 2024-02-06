@@ -1,3 +1,7 @@
+## 0.2.8
+
+- Improved handling of C pointers in OCaml finalizers
+
 ## 0.2.7
 
 - Fixed possible double frees when GC is triggered after `free` has already been called
