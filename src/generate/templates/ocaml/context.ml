@@ -73,3 +73,16 @@ type futhark_array = {{ mutable ptr: unit ptr ptr; shape: int array; ctx: Contex
 type opaque = {{ mutable opaque_ptr: unit ptr ptr; opaque_ctx: Context.t }}
 [@@@ocaml.warning "+34"]
 [@@@ocaml.warning "+69"]
+
+[@@@ocaml.warning "-32"]
+let get_ptr t =
+  let x = !@(t.ptr) in
+  check_use_after_free `array (Ctypes.is_null x);
+  x
+
+let get_opaque_ptr t =
+  let x = !@(t.opaque_ptr) in
+  check_use_after_free `opaque (Ctypes.is_null x);
+  x
+[@@@ocaml.warning "+32"]
+

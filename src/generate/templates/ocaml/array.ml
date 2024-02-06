@@ -23,12 +23,11 @@ module {module_name} = struct
 
   let values t ba =
     check_use_after_free `context t.ctx.Context.context_free;
-    check_use_after_free `array (Ctypes.is_null !@(t.ptr));
     let dims = Genarray.dims ba in
     let a = Array.fold_left ( * ) 1 t.shape in
     let b = Array.fold_left ( * ) 1 dims in
     if (a <> b) then raise (Error (InvalidShape (a, b)));
-    let rc = Bindings.futhark_values_{elemtype}_{rank}d t.ctx.Context.handle (!@(t.ptr)) (cast @@ bigarray_start genarray ba) in
+    let rc = Bindings.futhark_values_{elemtype}_{rank}d t.ctx.Context.handle (get_ptr t) (cast @@ bigarray_start genarray ba) in
     Context.auto_sync t.ctx;
     if rc <> 0 then raise (Error (Code rc))
 
