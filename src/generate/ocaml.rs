@@ -437,7 +437,6 @@ impl Generate for OCaml {
             config.output_file,
             include_str!("templates/ocaml/record.ml"),
             new_params = new_params.join(" "),
-            new_tmp = new_params.join(", "),
             new_fn = record.new,
             new_call_args = new_call_args.join(" "),
         )?;
@@ -578,7 +577,6 @@ impl Generate for OCaml {
             entry_params = entry_params.join(" "),
             out_decl = out_decl.join("\n"),
             call_args = call_args.join(" "),
-            call_tmp = call_args.join(", "),
             out_return = out_return.join(", ")
         )?;
 

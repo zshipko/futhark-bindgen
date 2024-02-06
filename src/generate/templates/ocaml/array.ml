@@ -20,6 +20,7 @@ module {module_name} = struct
     if is_null ptr then raise (Error NullPtr);
     Context.auto_sync ctx;
     let t = {{ ptr; ctx; shape = dims; array_free = false }} in
+    set_managed ptr t; 
     Gc.finalise free t; t
 
   let values t ba =
@@ -73,6 +74,7 @@ module {module_name} = struct
     if is_null ptr then raise (Error NullPtr);
     let shape = ptr_shape ctx.Context.handle ptr in
     let t = {{ ptr; ctx; shape; array_free = false }} in
+    set_managed ptr t; 
     Gc.finalise free t; t
     
   let _ = of_ptr

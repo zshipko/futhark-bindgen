@@ -10,6 +10,7 @@
   let of_ptr ctx ptr =
     if is_null ptr then raise (Error NullPtr);
     let t = {{ opaque_ptr = ptr; opaque_ctx = ctx; opaque_free = false }} in
+    set_managed ptr t;
     Gc.finalise free t; t
 
   let _ = of_ptr

@@ -3,8 +3,8 @@
     let ptr = allocate (ptr void) null in
     let rc = Bindings.{new_fn} ctx.Context.handle ptr {new_call_args} in
     if rc <> 0 then raise (Error (Code rc));
-    let _ = {new_tmp} in
     Context.auto_sync ctx;
     let opaque_ptr = !@ptr in
     let t = {{ opaque_ptr; opaque_ctx = ctx; opaque_free = false }} in
+    set_managed ptr t;
     Gc.finalise free t; t

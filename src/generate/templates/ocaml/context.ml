@@ -24,6 +24,7 @@ module Context = struct
       raise (Error NullPtr)
     else
       let t = {{ handle; config; cache_file; auto_sync; context_free = false }} in
+      set_managed handle t; 
       let () = Gc.finalise free t in
       t
 
