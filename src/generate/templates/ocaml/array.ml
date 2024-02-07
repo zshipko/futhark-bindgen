@@ -8,7 +8,8 @@ module {module_name} = struct
   let free ctx ptr =
     let is_null = Ctypes.is_null ptr || Ctypes.is_null (!@ptr) in
     if not ctx.Context.context_free && not is_null then
-      ignore (Bindings.futhark_free_{elemtype}_{rank}d ctx.Context.handle (!@ptr))
+      let () = ignore (Bindings.futhark_free_{elemtype}_{rank}d ctx.Context.handle (!@ptr)) in
+      ptr <-@ Ctypes.null
 
   let cast x =
     coerce (ptr void) (ptr {ocaml_ctype}) (to_voidp x)
@@ -71,7 +72,7 @@ module {module_name} = struct
     let shape = ptr_shape ctx.Context.handle ptr in
     {{ ptr = Ctypes.allocate ~finalise:(free ctx) (Ctypes.ptr Ctypes.void) ptr; ctx; shape }}
 
-  let free t = free t.ctx t.ptr; t.ptr <-@ Ctypes.null
+  let free t = free t.ctx t.ptr
     
   let _ = of_ptr
 end
