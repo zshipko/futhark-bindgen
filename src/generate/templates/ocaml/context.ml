@@ -1,7 +1,9 @@
 open Bigarray
 
 module Context = struct
+  [@@@ocaml.warning "-69"]
   type t = {{ handle: unit ptr; config: unit ptr; cache_file: string option; auto_sync: bool; mutable context_free: bool }}
+  [@@@ocaml.warning "+69"]
 
   let free t =
     if not t.context_free then
@@ -24,6 +26,7 @@ module Context = struct
       raise (Error NullPtr)
     else
       let t = {{ handle; config; cache_file; auto_sync; context_free = false }} in
+      set_managed handle t; 
       let () = Gc.finalise free t in
       t
 
@@ -64,5 +67,22 @@ module Context = struct
     Bindings.futhark_context_unpause_profiling t.handle
 end
 
-type futhark_array = {{ ptr: unit ptr; shape: int array; ctx: Context.t; mutable array_free: bool }}
-type opaque = {{ opaque_ptr: unit ptr; opaque_ctx: Context.t; mutable opaque_free: bool }}
+[@@@ocaml.warning "-34"]
+[@@@ocaml.warning "-69"]
+type futhark_array = {{ mutable ptr: unit ptr ptr; shape: int array; ctx: Context.t }}
+type opaque = {{ mutable opaque_ptr: unit ptr ptr; opaque_ctx: Context.t }}
+[@@@ocaml.warning "+34"]
+[@@@ocaml.warning "+69"]
+
+[@@@ocaml.warning "-32"]
+let get_ptr t =
+  let x = !@(t.ptr) in
+  check_use_after_free `array (Ctypes.is_null x);
+  x
+
+let get_opaque_ptr t =
+  let x = !@(t.opaque_ptr) in
+  check_use_after_free `opaque (Ctypes.is_null x);
+  x
+[@@@ocaml.warning "+32"]
+

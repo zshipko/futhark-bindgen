@@ -422,10 +422,10 @@ impl Generate for OCaml {
             new_params.push(format!("field{}", f.name));
 
             if type_is_array(&t) {
-                new_call_args.push(format!("field{}.ptr", f.name));
+                new_call_args.push(format!("(get_ptr field{})", f.name));
                 new_arg_types.push(format!("{}.t", first_uppercase(&t)));
             } else if type_is_opaque(&t) {
-                new_call_args.push(format!("field{}.opaque_ptr", f.name));
+                new_call_args.push(format!("(get_opaque_ptr field{})", f.name));
                 new_arg_types.push(t.to_string());
             } else {
                 new_call_args.push(format!("field{}", f.name));
@@ -562,9 +562,9 @@ impl Generate for OCaml {
 
             let t = self.get_type(&input.r#type);
             if type_is_array(&t) {
-                call_args.push(format!("input{i}.ptr"));
+                call_args.push(format!("(get_ptr input{i})"));
             } else if type_is_opaque(&t) {
-                call_args.push(format!("input{i}.opaque_ptr"));
+                call_args.push(format!("(get_opaque_ptr input{i})"));
             } else {
                 call_args.push(format!("input{i}"));
             }

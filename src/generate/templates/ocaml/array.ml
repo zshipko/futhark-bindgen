@@ -5,10 +5,11 @@ module {module_name} = struct
   
   let kind = {ba_kind}
 
-  let free t =
-    if not t.array_free && not t.ctx.Context.context_free then
-      let () = ignore (Bindings.futhark_free_{elemtype}_{rank}d t.ctx.Context.handle t.ptr) in
-      t.array_free <- true
+  let free ctx ptr =
+    let is_null = Ctypes.is_null ptr || Ctypes.is_null (!@ptr) in
+    if not ctx.Context.context_free && not is_null then
+      let () = ignore (Bindings.futhark_free_{elemtype}_{rank}d ctx.Context.handle (!@ptr)) in
+      ptr <-@ Ctypes.null
 
   let cast x =
     coerce (ptr void) (ptr {ocaml_ctype}) (to_voidp x)
@@ -19,17 +20,15 @@ module {module_name} = struct
     let ptr = Bindings.futhark_new_{elemtype}_{rank}d ctx.Context.handle (cast @@ bigarray_start genarray ba) {dim_args} in
     if is_null ptr then raise (Error NullPtr);
     Context.auto_sync ctx;
-    let t = {{ ptr; ctx; shape = dims; array_free = false }} in
-    Gc.finalise free t; t
+    {{ ptr = Ctypes.allocate ~finalise:(free ctx) (Ctypes.ptr Ctypes.void) ptr; ctx; shape = dims }}
 
   let values t ba =
     check_use_after_free `context t.ctx.Context.context_free;
-    check_use_after_free `array t.array_free;
     let dims = Genarray.dims ba in
     let a = Array.fold_left ( * ) 1 t.shape in
     let b = Array.fold_left ( * ) 1 dims in
     if (a <> b) then raise (Error (InvalidShape (a, b)));
-    let rc = Bindings.futhark_values_{elemtype}_{rank}d t.ctx.Context.handle t.ptr (cast @@ bigarray_start genarray ba) in
+    let rc = Bindings.futhark_values_{elemtype}_{rank}d t.ctx.Context.handle (get_ptr t) (cast @@ bigarray_start genarray ba) in
     Context.auto_sync t.ctx;
     if rc <> 0 then raise (Error (Code rc))
 
@@ -71,8 +70,9 @@ module {module_name} = struct
     check_use_after_free `context ctx.Context.context_free;
     if is_null ptr then raise (Error NullPtr);
     let shape = ptr_shape ctx.Context.handle ptr in
-    let t = {{ ptr; ctx; shape; array_free = false }} in
-    Gc.finalise free t; t
+    {{ ptr = Ctypes.allocate ~finalise:(free ctx) (Ctypes.ptr Ctypes.void) ptr; ctx; shape }}
+
+  let free t = free t.ctx t.ptr
     
   let _ = of_ptr
 end
