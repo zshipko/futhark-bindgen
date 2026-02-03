@@ -128,10 +128,25 @@ pub struct Record {
 }
 
 #[derive(Clone, Debug, serde::Deserialize)]
+pub struct SumVariant {
+    pub name: String,
+    pub construct: String,
+    pub destruct: String,
+    pub payload: Vec<String>,
+}
+
+#[derive(Clone, Debug, serde::Deserialize)]
+pub struct Sum {
+    pub variant: String,
+    pub variants: Vec<SumVariant>,
+}
+
+#[derive(Clone, Debug, serde::Deserialize)]
 pub struct OpaqueType {
     pub ctype: String,
     pub ops: OpaqueOps,
     pub record: Option<Record>,
+    pub sum: Option<Sum>,
 }
 
 #[derive(Clone, Debug, serde::Deserialize)]

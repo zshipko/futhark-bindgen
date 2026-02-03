@@ -138,3 +138,11 @@ entry count_lines (input: []u8) : i64 =
 entry count_true (input: []bool) : i64 =
   map i64.bool input |> i64.sum
 
+-- Sum type with construction/destruction for testing
+type~ computation [n] [m] = #ok [n]i32 | #err ([m]i32, [m]i32)
+
+-- Entry point that destructs and processes a computation type
+entry process_computation [n] [m] (r: computation [n] [m]): i64 =
+  match r
+  case #ok xs -> i64.sum (map i64.i32 xs)
+  case #err (xs, ys) -> i64.sum (map i64.i32 xs) + i64.sum (map i64.i32 ys)

@@ -48,14 +48,18 @@ pub trait Generate {
     /// Iterates through the manifest and generates code
     fn generate(&mut self, pkg: &Package, config: &mut Config) -> Result<(), Error> {
         self.bindings(pkg, config)?;
+
+        // Generate array types first
         for (name, ty) in &pkg.manifest.types {
-            match ty {
-                manifest::Type::Array(ty) => {
-                    self.array_type(pkg, config, name, ty)?;
-                }
-                manifest::Type::Opaque(ty) => {
-                    self.opaque_type(pkg, config, name, ty)?;
-                }
+            if let manifest::Type::Array(ty) = ty {
+                self.array_type(pkg, config, name, ty)?;
+            }
+        }
+
+        // Then generate opaque types (which may reference arrays)
+        for (name, ty) in &pkg.manifest.types {
+            if let manifest::Type::Opaque(ty) = ty {
+                self.opaque_type(pkg, config, name, ty)?;
             }
         }
 

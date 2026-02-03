@@ -172,9 +172,9 @@ impl Generate for OCaml {
             _ => (),
         }
 
+        // Process array types first to register them in ctypes_map
         for (name, ty) in &pkg.manifest.types {
-            match ty {
-                manifest::Type::Array(a) => {
+            if let manifest::Type::Array(a) = ty {
                     let elemtype = a.elemtype.to_str().to_string();
                     let ctypes_elemtype = self.get_ctype(&elemtype);
                     let rank = a.rank;
@@ -211,8 +211,12 @@ impl Generate for OCaml {
                             vec!["context", &ocaml_name]
                         )
                     ));
-                }
-                manifest::Type::Opaque(ty) => {
+            }
+        }
+
+        // Then process opaque types (which may reference arrays)
+        for (name, ty) in &pkg.manifest.types {
+            if let manifest::Type::Opaque(ty) = ty {
                     let futhark_name = convert_struct_name(&ty.ctype);
                     let mut ocaml_name = futhark_name
                         .strip_prefix("futhark_opaque_")
@@ -234,6 +238,52 @@ impl Generate for OCaml {
                         "  {}",
                         self.foreign_function(free_fn, "int", vec!["context", &ocaml_name])
                     ));
+
+                    // Handle sum types
+                    if let Some(sum) = &ty.sum {
+                        // Register variant function
+                        generated_foreign_functions.push(format!(
+                            "  {}",
+                            self.foreign_function(&sum.variant, "int", vec!["context", &ocaml_name])
+                        ));
+
+                        // Register constructor and destructor for each variant
+                        for variant in &sum.variants {
+                            // Constructor
+                            let mut construct_args = vec!["context".to_string(), format!("ptr {ocaml_name}")];
+                            for payload_type in &variant.payload {
+                                let cty = self
+                                    .ctypes_map
+                                    .get(payload_type)
+                                    .cloned()
+                                    .unwrap_or_else(|| payload_type.clone());
+                                construct_args.push(cty);
+                            }
+                            let construct_args = construct_args.iter().map(|x| x.as_str()).collect();
+                            generated_foreign_functions.push(format!(
+                                "  {}",
+                                self.foreign_function(&variant.construct, "int", construct_args)
+                            ));
+
+                            // Destructor
+                            let mut destruct_args = vec!["context".to_string()];
+                            for payload_type in &variant.payload {
+                                let cty = self
+                                    .ctypes_map
+                                    .get(payload_type)
+                                    .cloned()
+                                    .unwrap_or_else(|| payload_type.clone());
+                                destruct_args.push(format!("ptr {cty}"));
+                            }
+                            destruct_args.push(ocaml_name.clone());
+                            let destruct_args = destruct_args.iter().map(|x| x.as_str()).collect();
+                            generated_foreign_functions.push(format!(
+                                "  {}",
+                                self.foreign_function(&variant.destruct, "int", destruct_args)
+                            ));
+                        }
+                        continue;
+                    }
 
                     let record = match &ty.record {
                         Some(r) => r,
@@ -264,7 +314,6 @@ impl Generate for OCaml {
                     let args = args.iter().map(|x| x.as_str()).collect();
                     generated_foreign_functions
                         .push(format!("  {}", self.foreign_function(new_fn, "int", args)));
-                }
             }
         }
 
@@ -403,6 +452,146 @@ impl Generate for OCaml {
             name = ocaml_name,
         )?;
         writeln!(self.mli_file, include_str!("templates/ocaml/opaque.mli"),)?;
+
+        // Handle sum types
+        if let Some(sum) = &ty.sum {
+            // Generate variant function
+            let variant_fn = &sum.variant;
+            writeln!(
+                config.output_file,
+                include_str!("templates/ocaml/sum_variant.ml"),
+                variant_fn = variant_fn
+            )?;
+            writeln!(
+                self.mli_file,
+                include_str!("templates/ocaml/sum_variant.mli")
+            )?;
+
+            // Generate constructor and destructor for each variant
+            for variant in &sum.variants {
+                let variant_name = &variant.name;
+                let construct_fn = &variant.construct;
+                let destruct_fn = &variant.destruct;
+
+                // Build constructor parameters
+                let mut new_params = Vec::new();
+                let mut new_call_args = Vec::new();
+                let mut new_arg_types = Vec::new();
+                for (i, payload_type) in variant.payload.iter().enumerate() {
+                    let t = self.get_type(payload_type);
+                    new_params.push(format!("v{i}"));
+
+                    if type_is_array(&t) {
+                        new_call_args.push(format!("(get_ptr v{i})"));
+                        new_arg_types.push(format!("{}.t", first_uppercase(&t)));
+                    } else if type_is_opaque(&t) {
+                        new_call_args.push(format!("(get_opaque_ptr v{i})"));
+                        new_arg_types.push(t.to_string());
+                    } else {
+                        new_call_args.push(format!("v{i}"));
+                        new_arg_types.push(t.to_string());
+                    }
+                }
+
+                // Generate constructor
+                let params = if new_params.is_empty() {
+                    "()".to_string()
+                } else {
+                    new_params.join(" ")
+                };
+                let args = if new_call_args.is_empty() {
+                    String::new()
+                } else {
+                    format!(" {}", new_call_args.join(" "))
+                };
+                writeln!(
+                    config.output_file,
+                    include_str!("templates/ocaml/sum_construct.ml"),
+                    variant_name = variant_name,
+                    params = params,
+                    construct_fn = construct_fn,
+                    args = args
+                )?;
+                writeln!(
+                    self.mli_file,
+                    include_str!("templates/ocaml/sum_construct.mli"),
+                    variant_name = variant_name,
+                    arg_types = if new_arg_types.is_empty() {
+                        "unit".to_string()
+                    } else {
+                        new_arg_types.join(" -> ")
+                    }
+                )?;
+
+                // Build destructor parameters
+                let mut destruct_params = Vec::new();
+                let mut destruct_returns = Vec::new();
+                let mut destruct_return_types = Vec::new();
+                for (i, payload_type) in variant.payload.iter().enumerate() {
+                    let t = self.get_type(payload_type);
+                    let ct = self
+                        .ctypes_map
+                        .get(payload_type)
+                        .cloned()
+                        .unwrap_or_else(|| payload_type.clone());
+
+                    if type_is_array(&t) || type_is_opaque(&t) {
+                        destruct_params.push(format!("let out{i}_ptr = allocate (ptr void) null in"));
+                    } else {
+                        destruct_params.push(format!("let out{i}_ptr = allocate_n {ct} ~count:1 in"));
+                    }
+
+                    if type_is_array(&t) {
+                        let m = first_uppercase(&t);
+                        destruct_returns.push(format!("{m}.of_ptr t.opaque_ctx !@out{i}_ptr"));
+                        destruct_return_types.push(format!("{m}.t"));
+                    } else if type_is_opaque(&t) {
+                        let m = first_uppercase(&t);
+                        let m = m.strip_suffix(".t").unwrap_or(&m);
+                        destruct_returns.push(format!("{m}.of_ptr t.opaque_ctx !@out{i}_ptr"));
+                        destruct_return_types.push(t.to_string());
+                    } else {
+                        destruct_returns.push(format!("!@out{i}_ptr"));
+                        destruct_return_types.push(t.to_string());
+                    }
+                }
+
+                // Generate destructor
+                let destruct_out_ptrs: Vec<_> = (0..variant.payload.len())
+                    .map(|i| format!("out{i}_ptr"))
+                    .collect();
+                let return_type = if destruct_return_types.is_empty() {
+                    "unit".to_string()
+                } else if destruct_return_types.len() == 1 {
+                    destruct_return_types[0].clone()
+                } else {
+                    format!("({})", destruct_return_types.join(" * "))
+                };
+                writeln!(
+                    config.output_file,
+                    include_str!("templates/ocaml/sum_destruct.ml"),
+                    variant_name = variant_name,
+                    params = destruct_params
+                        .iter()
+                        .map(|p| format!("    {p}"))
+                        .collect::<Vec<_>>()
+                        .join("\n"),
+                    destruct_fn = destruct_fn,
+                    out_ptrs = destruct_out_ptrs.join(" "),
+                    returns = destruct_returns.join(", ")
+                )?;
+                writeln!(
+                    self.mli_file,
+                    include_str!("templates/ocaml/sum_destruct.mli"),
+                    variant_name = variant_name,
+                    return_type = return_type
+                )?;
+            }
+
+            writeln!(config.output_file, "end\n")?;
+            writeln!(self.mli_file, "end\n")?;
+            return Ok(());
+        }
 
         let record = match &ty.record {
             Some(r) => r,

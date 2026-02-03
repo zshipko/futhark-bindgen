@@ -119,6 +119,140 @@ impl Generate for Rust {
             free_fn = ty.ops.free,
         )?;
 
+        // Handle sum types
+        if let Some(sum) = &ty.sum {
+            // Generate variant function
+            writeln!(
+                config.output_file,
+                include_str!("templates/rust/sum_variant.rs"),
+                rust_type = rust_type,
+                futhark_type = futhark_type,
+                variant_fn = sum.variant
+            )?;
+
+            // Generate constructor and destructor for each variant
+            for variant in &sum.variants {
+                let variant_name = &variant.name;
+                let construct_fn = &variant.construct;
+                let destruct_fn = &variant.destruct;
+
+                // Build constructor
+                let mut new_params = Vec::new();
+                let mut new_call_args = Vec::new();
+                let mut new_extern_params = Vec::new();
+                for (i, payload_type) in variant.payload.iter().enumerate() {
+                    let a = Self::get_type(&self.typemap, payload_type);
+                    let t = Self::get_type(&self.typemap, &a);
+
+                    let u = if t == *payload_type {
+                        t.to_string()
+                    } else {
+                        format!("&{t}")
+                    };
+
+                    if type_is_opaque(&a) {
+                        new_call_args.push(format!("v{i}.data"));
+                        new_extern_params.push(format!("v{i}: *const {a}"));
+                    } else if type_is_array(&t) {
+                        new_call_args.push(format!("v{i}.ptr"));
+                        new_extern_params.push(format!("v{i}: *const {a}"));
+                    } else {
+                        new_call_args.push(format!("v{i}"));
+                        new_extern_params.push(format!("v{i}: {a}"));
+                    }
+
+                    new_params.push(format!("v{i}: {u}"));
+                }
+
+                writeln!(
+                    config.output_file,
+                    include_str!("templates/rust/sum_construct.rs"),
+                    rust_type = rust_type,
+                    variant_name = variant_name,
+                    construct_fn = construct_fn,
+                    futhark_type = futhark_type,
+                    params = if new_params.is_empty() {
+                        String::new()
+                    } else {
+                        format!(", {}", new_params.join(", "))
+                    },
+                    args = if new_call_args.is_empty() {
+                        String::new()
+                    } else {
+                        format!(", {}", new_call_args.join(", "))
+                    },
+                    extern_params = if new_extern_params.is_empty() {
+                        String::new()
+                    } else {
+                        format!(", {}", new_extern_params.join(", "))
+                    }
+                )?;
+
+                // Build destructor
+                let mut destruct_return_types = Vec::new();
+                let mut destruct_returns = Vec::new();
+                let mut destruct_out_decls = Vec::new();
+                let mut destruct_out_args = Vec::new();
+                let mut destruct_extern_params = Vec::new();
+                for (i, payload_type) in variant.payload.iter().enumerate() {
+                    let a = Self::get_type(&self.typemap, payload_type);
+                    let t = Self::get_type(&self.typemap, &a);
+
+                    if type_is_array(&t) || type_is_opaque(&a) {
+                        destruct_out_decls.push(format!("let mut out{i} = std::ptr::null_mut();"));
+                        destruct_out_args.push(format!("&mut out{i}"));
+                        destruct_extern_params.push(format!("out{i}: *mut *mut {a}"));
+                        destruct_returns.push(format!("{t}::from_ptr(self.ctx, out{i})"));
+                    } else {
+                        destruct_out_decls.push(format!("let mut out{i} = std::mem::MaybeUninit::zeroed();"));
+                        destruct_out_args.push(format!("out{i}.as_mut_ptr()"));
+                        destruct_extern_params.push(format!("out{i}: *mut {a}"));
+                        destruct_returns.push(format!("out{i}.assume_init()"));
+                    }
+                    destruct_return_types.push(t);
+                }
+
+                let (return_type, return_expr) = match destruct_return_types.len() {
+                    0 => ("()".to_string(), "()".to_string()),
+                    1 => (destruct_return_types[0].clone(), destruct_returns[0].clone()),
+                    _ => (
+                        format!("({})", destruct_return_types.join(", ")),
+                        format!("({})", destruct_returns.join(", ")),
+                    ),
+                };
+
+                writeln!(
+                    config.output_file,
+                    include_str!("templates/rust/sum_destruct.rs"),
+                    rust_type = rust_type,
+                    variant_name = variant_name,
+                    return_type = return_type,
+                    out_decls = destruct_out_decls
+                        .iter()
+                        .map(|d| format!("            {d}"))
+                        .collect::<Vec<_>>()
+                        .join("\n"),
+                    destruct_fn = destruct_fn,
+                    out_args = if destruct_out_args.is_empty() {
+                        String::new()
+                    } else {
+                        format!(", {}", destruct_out_args.join(", "))
+                    },
+                    return_expr = return_expr,
+                    extern_params = if destruct_extern_params.is_empty() {
+                        String::new()
+                    } else {
+                        format!("{},", destruct_extern_params.join(", "))
+                    },
+                    futhark_type = futhark_type
+                )?;
+            }
+
+            self.typemap.insert(name.to_string(), futhark_type.clone());
+            self.typemap.insert(futhark_type, rust_type);
+            return Ok(());
+        }
+
         let record = match &ty.record {
             Some(r) => r,
             None => {
