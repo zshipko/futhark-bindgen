@@ -1,0 +1,1 @@
+  val variant: t -> int
